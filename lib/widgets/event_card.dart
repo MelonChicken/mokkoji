@@ -9,6 +9,7 @@ class EventCard extends StatelessWidget {
   final SourceType source;
   final VoidCallback? onOpen;
   final VoidCallback? onNavigate;
+  final VoidCallback? onDelete;
 
   const EventCard({
     super.key,
@@ -18,6 +19,7 @@ class EventCard extends StatelessWidget {
     required this.source,
     this.onOpen,
     this.onNavigate,
+    this.onDelete,
   });
 
   @override
@@ -76,10 +78,48 @@ class EventCard extends StatelessWidget {
                 onPressed: onNavigate,
                 child: const Text('길찾기'),
               ),
+              if (onDelete != null) ...[
+                const SizedBox(width: AppTokens.s8),
+                IconButton(
+                  onPressed: () => _showDeleteConfirmDialog(context),
+                  icon: const Icon(Icons.delete_outline),
+                  style: IconButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  tooltip: '삭제',
+                ),
+              ],
             ],
           )
         ],
       ),
     );
+  }
+
+  void _showDeleteConfirmDialog(BuildContext context) {
+    showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('일정 삭제'),
+        content: const Text('이 일정을 삭제하시겠습니까?\n삭제된 일정은 복원할 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    ).then((confirmed) {
+      if (confirmed == true && onDelete != null) {
+        onDelete!();
+      }
+    });
   }
 }

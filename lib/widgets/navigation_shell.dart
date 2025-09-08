@@ -68,6 +68,13 @@ class NavigationShell extends StatelessWidget {
   }
 
   void _showCreateEventBottomSheet(BuildContext context) {
-    showEventCreateSheet(context);
+    showEventCreateSheet(context, onEventCreated: () {
+      // 일정이 추가되면 홈 화면 새로고침
+      // 현재 홈 화면이면 새로고침 트리거
+      if (_calculateSelectedIndex(context) == 0) {
+        // 간단하게 페이지를 다시 로드하는 방법
+        context.go('/home');
+      }
+    });
   }
 }

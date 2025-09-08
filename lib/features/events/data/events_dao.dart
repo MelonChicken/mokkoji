@@ -23,6 +23,16 @@ class EventsDao {
     DbSignal.instance.pingEvents(); // ✅ 커밋 후 신호
   }
 
+  Future<void> upsert(EventEntity item) async {
+    final db = await _db;
+    await db.insert(
+      'events',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    DbSignal.instance.pingEvents(); // ✅ 변경 후 신호
+  }
+
   Future<List<EventEntity>> range(
     String startIso,
     String endIso, {

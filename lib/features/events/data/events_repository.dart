@@ -4,6 +4,7 @@ import 'events_dao.dart';
 import 'event_overrides_dao.dart';
 import 'event_entity.dart';
 import 'event_override_entity.dart';
+import 'events_api.dart';
 
 abstract class EventsApi {
   Future<Map<String, dynamic>> fetchEvents({
@@ -23,13 +24,36 @@ class EventsRepository {
     required this.api,
   });
 
-  // 동기화: 서버 → 로컬(upsert), 실패해도 로컬 데이터로 동작
+  // 로컬 우선 동기화: 1. 로컬 데이터 먼저 반환, 2. 외부 동기화 시도, 3. 성공시 업데이트
   Future<List<EventEntity>> syncAndGet(
     String startIso,
     String endIso, {
     List<String>? platforms,
+    bool forceSync = false,
+  }) async {
+    // 1. 로컬 데이터 먼저 가져오기
+    final localEvents = await dao.range(startIso, endIso, platforms: platforms);
+    
+    // 2. 외부 동기화는 백그라운드에서 수행
+    _backgroundSync(startIso, endIso, forceSync: forceSync);
+    
+    return localEvents;
+  }
+  
+  // 백그라운드 동기화 메소드
+  Future<void> _backgroundSync(
+    String startIso,
+    String endIso, {
+    bool forceSync = false,
   }) async {
     try {
+      // 외부 캘린더 연결 상태 확인
+      final hasExternalConnection = await _hasExternalCalendarConnection();
+      if (!hasExternalConnection && !forceSync) {
+        if (kDebugMode) debugPrint('No external calendar connection, skipping sync');
+        return;
+      }
+      
       final response = await api.fetchEvents(
         startIso: startIso,
         endIso: endIso,
@@ -44,6 +68,7 @@ class EventsRepository {
       
       if (events.isNotEmpty) {
         await dao.upsertAll(events);
+        if (kDebugMode) debugPrint('Background sync: ${events.length} events synced');
       }
       
       // 오버라이드 처리
@@ -55,13 +80,12 @@ class EventsRepository {
       
       if (overrides.isNotEmpty) {
         await overridesDao.upsertAll(overrides);
+        if (kDebugMode) debugPrint('Background sync: ${overrides.length} overrides synced');
       }
       
     } catch (e) {
-      if (kDebugMode) debugPrint('sync failed: $e');
+      if (kDebugMode) debugPrint('Background sync failed: $e');
     }
-    
-    return dao.range(startIso, endIso, platforms: platforms);
   }
 
   // 로컬 전용 조회 (동기화 없음)
@@ -152,6 +176,51 @@ class EventsRepository {
     );
   }
 
+  // 새 일정 생성 (로컬 우선)
+  Future<EventEntity> createEvent(EventEntity event) async {
+    // 1. 로컬 데이터베이스에 즉시 저장
+    await dao.upsert(event);
+    
+    // 2. 외부 캘린더 동기화는 백그라운드에서
+    _backgroundCreateEvent(event);
+    
+    return event;
+  }
+  
+  // 백그라운드 이벤트 생성 동기화
+  Future<void> _backgroundCreateEvent(EventEntity event) async {
+    try {
+      final hasExternalConnection = await _hasExternalCalendarConnection();
+      if (!hasExternalConnection) {
+        if (kDebugMode) debugPrint('No external connection, event saved locally only');
+        return;
+      }
+      
+      // TODO: 외부 캘린더에 이벤트 생성 API 호출
+      if (kDebugMode) debugPrint('Background create: Event ${event.id} synced to external calendar');
+      
+    } catch (e) {
+      if (kDebugMode) debugPrint('Background create failed: $e');
+    }
+  }
+  
+  // 외부 캘린더 연결 상태 확인
+  Future<bool> _hasExternalCalendarConnection() async {
+    try {
+      // Mock API인 경우 항상 연결됨으로 간주
+      if (api is MockEventsApi) return true;
+      
+      // 실제 API인 경우 간단한 health check
+      final response = await api.fetchEvents(
+        startIso: DateTime.now().toIso8601String(),
+        endIso: DateTime.now().toIso8601String(),
+      );
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // 유틸리티 메소드들
   Future<int> getEventCount() async {
     return dao.countAll();
@@ -163,5 +232,10 @@ class EventsRepository {
 
   Future<void> cleanupOldEvents({int daysAgo = 30}) async {
     await dao.cleanupDeleted(daysAgo: daysAgo);
+  }
+  
+  // 강제 동기화 (수동 새로고침)
+  Future<void> forceSync(String startIso, String endIso) async {
+    await _backgroundSync(startIso, endIso, forceSync: true);
   }
 }

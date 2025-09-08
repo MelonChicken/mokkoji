@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/events_dao.dart';
 import '../data/event_overrides_dao.dart';
 import '../data/events_repository.dart';
+import '../data/events_api.dart';
 
 // DAO Providers
 final eventsDaoProvider = Provider<EventsDao>((ref) => EventsDao());

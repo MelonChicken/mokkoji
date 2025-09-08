@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../theme/tokens.dart';
 import '../widgets/event_card.dart';
 import '../widgets/source_chip.dart';
+import '../data/repositories/event_repository.dart';
+import '../features/events/data/event_entity.dart';
+import '../screens/create_event_bottomsheet.dart';
 
 class AgendaScreen extends StatefulWidget {
   const AgendaScreen({super.key});
@@ -16,6 +20,42 @@ class _AgendaScreenState extends State<AgendaScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final Set<SourceType> _selectedPlatforms = {SourceType.kakao, SourceType.naver, SourceType.google};
+  List<EventEntity> _events = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEvents();
+  }
+
+  Future<void> _loadEvents() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final startOfDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+      
+      final events = await eventRepository.getEventsForRange(
+        startOfDay.toIso8601String(),
+        endOfDay.toIso8601String(),
+      );
+      
+      if (mounted) {
+        setState(() {
+          _events = events;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading events: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +147,9 @@ class _AgendaScreenState extends State<AgendaScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          // TODO: Show create event bottom sheet
+          showEventCreateSheet(context, onEventCreated: () {
+            _loadEvents(); // 일정 추가 후 새로고침
+          });
         },
         label: const Text('모으기'),
         icon: const Icon(Icons.add),
@@ -133,6 +175,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
               setState(() {
                 _selectedDate = _selectedDate.subtract(const Duration(days: 1));
               });
+              _loadEvents();
             },
           ),
           Expanded(
@@ -154,6 +197,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
               setState(() {
                 _selectedDate = _selectedDate.add(const Duration(days: 1));
               });
+              _loadEvents();
             },
           ),
         ],
@@ -202,9 +246,13 @@ class _AgendaScreenState extends State<AgendaScreen> {
   }
 
   Widget _buildEventList() {
-    final events = _getFilteredEvents();
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final filteredEvents = _getFilteredEvents();
     
-    if (events.isEmpty) {
+    if (filteredEvents.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -229,86 +277,53 @@ class _AgendaScreenState extends State<AgendaScreen> {
     }
 
     return ListView.separated(
-      itemCount: events.length,
+      itemCount: filteredEvents.length,
       separatorBuilder: (context, index) => const SizedBox(height: AppTokens.s8),
       itemBuilder: (context, index) {
-        final event = events[index];
+        final event = filteredEvents[index];
+        final startTime = DateTime.parse(event.startDt);
+        final timeStr = DateFormat('HH:mm').format(startTime);
+        
         return EventCard(
-          time: event['time'],
-          title: _highlightSearchText(event['title']),
-          place: event['place'],
-          source: event['source'],
-          onOpen: () => context.go('/detail/${event['id']}'),
-          onNavigate: () => _openMap(event['place']),
+          time: timeStr,
+          title: _highlightSearchText(event.title),
+          place: event.location ?? '장소 미정',
+          source: _getSourceFromPlatform(event.sourcePlatform),
+          onOpen: () => context.go('/detail/${event.id}'),
+          onNavigate: () => _openMap(event.location ?? ''),
+          onDelete: () => _deleteEvent(event.id),
         );
       },
     );
   }
 
-  List<Map<String, dynamic>> _getFilteredEvents() {
-    final allEvents = [
-      {
-        'id': '1',
-        'time': '09:30',
-        'title': '디자인 킥오프',
-        'place': '스타벅스 강남역점',
-        'source': SourceType.google,
-        'date': DateTime.now(),
-      },
-      {
-        'id': '2',
-        'time': '12:00',
-        'title': '런치 미팅',
-        'place': '역삼 메가박스 옆',
-        'source': SourceType.kakao,
-        'date': DateTime.now(),
-      },
-      {
-        'id': '3',
-        'time': '14:30',
-        'title': '클라이언트 발표',
-        'place': '을지로 오피스텔',
-        'source': SourceType.naver,
-        'date': DateTime.now().add(const Duration(days: 1)),
-      },
-      {
-        'id': '4',
-        'time': '16:20',
-        'title': '개발 스프린트 계획',
-        'place': '온라인(Zoom)',
-        'source': SourceType.naver,
-        'date': DateTime.now(),
-      },
-      {
-        'id': '5',
-        'time': '18:30',
-        'title': '팀 회식',
-        'place': '강남역 맛집',
-        'source': SourceType.kakao,
-        'date': DateTime.now(),
-      },
-    ];
+  SourceType _getSourceFromPlatform(String platform) {
+    switch (platform.toLowerCase()) {
+      case 'google':
+        return SourceType.google;
+      case 'kakao':
+        return SourceType.kakao;
+      case 'naver':
+        return SourceType.naver;
+      default:
+        return SourceType.google; // internal은 google로 표시
+    }
+  }
 
-    // 날짜 필터링
-    final dateFiltered = allEvents.where((event) {
-      final eventDate = event['date'] as DateTime;
-      return eventDate.year == _selectedDate.year &&
-             eventDate.month == _selectedDate.month &&
-             eventDate.day == _selectedDate.day;
-    }).toList();
-
+  List<EventEntity> _getFilteredEvents() {
     // 플랫폼 필터링
-    final platformFiltered = dateFiltered.where((event) {
-      return _selectedPlatforms.contains(event['source']);
+    final platformFiltered = _events.where((event) {
+      final sourceType = _getSourceFromPlatform(event.sourcePlatform);
+      return _selectedPlatforms.contains(sourceType);
     }).toList();
 
     // 검색 필터링
     if (_searchQuery.isNotEmpty) {
       return platformFiltered.where((event) {
-        final title = event['title'] as String;
-        final place = event['place'] as String;
-        return title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-               place.toLowerCase().contains(_searchQuery.toLowerCase());
+        final title = event.title.toLowerCase();
+        final location = (event.location ?? '').toLowerCase();
+        final query = _searchQuery.toLowerCase();
+        return title.contains(query) || location.contains(query);
       }).toList();
     }
 
@@ -363,6 +378,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
       setState(() {
         _selectedDate = date;
       });
+      _loadEvents();
     }
   }
 
@@ -376,6 +392,34 @@ class _AgendaScreenState extends State<AgendaScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteEvent(String eventId) async {
+    try {
+      await eventRepository.deleteEvent(eventId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('일정이 삭제되었습니다'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // 삭제 후 이벤트 목록 새로고침
+        _loadEvents();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('일정 삭제 실패: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   void _handleBackNavigation(BuildContext context) {

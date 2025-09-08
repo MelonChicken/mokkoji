@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import '../theme/tokens.dart';
+import '../data/repositories/event_repository.dart';
 
-Future<void> showEventCreateSheet(BuildContext context) {
+Future<void> showEventCreateSheet(BuildContext context, {VoidCallback? onEventCreated}) {
   const topRadius = Radius.circular(24); // ← 원하는 곡률 (24~28dp 권장)
 
   return showModalBottomSheet(
@@ -18,7 +21,7 @@ Future<void> showEventCreateSheet(BuildContext context) {
     // showDragHandle: true,
     builder: (ctx) => _RoundedSheetFrame(
       radius: topRadius,
-      child: const EventCreateSheet(), // ← 기존 폼 (입력필드는 그대로)
+      child: EventCreateSheet(onEventCreated: onEventCreated), // ← 콜백 추가
     ),
   );
 }
@@ -42,7 +45,9 @@ InputDecoration _inputDecoration(BuildContext context, {
 }
 
 class EventCreateSheet extends StatefulWidget {
-  const EventCreateSheet({super.key});
+  final VoidCallback? onEventCreated;
+  
+  const EventCreateSheet({super.key, this.onEventCreated});
 
   @override
   State<EventCreateSheet> createState() => _EventCreateSheetState();
@@ -271,10 +276,73 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: _isFormValid
-                      ? () {
+                      ? () async {
                           if (!_formKey.currentState!.validate()) return;
-                          // TODO: Combine date + time → DateTime, call API, then pop
-                          Navigator.of(context).pop();
+                          
+                          // Combine date + time → DateTime
+                          final eventDateTime = DateTime(
+                            _selectedDate!.year,
+                            _selectedDate!.month,
+                            _selectedDate!.day,
+                            _selectedTime!.hour,
+                            _selectedTime!.minute,
+                          );
+                          
+                          // 선택된 캘린더 연동 정보 확인
+                          String selectedPlatform = 'internal'; // 기본값
+                          if (_selectedSources.isNotEmpty) {
+                            selectedPlatform = _selectedSources.first;
+                          }
+                          
+                          if (kDebugMode) {
+                            print('🎯 Selected platforms: $_selectedSources');
+                            print('🎯 Using platform: $selectedPlatform');
+                          }
+                          
+                          // Create event request
+                          final request = EventCreateRequest(
+                            id: const Uuid().v4(),
+                            title: _titleController.text.trim(),
+                            description: _placeController.text.trim().isNotEmpty 
+                                ? _placeController.text.trim() 
+                                : null,
+                            startTime: eventDateTime,
+                            endTime: eventDateTime.add(const Duration(hours: 1)),
+                            location: _placeController.text.trim().isNotEmpty 
+                                ? _placeController.text.trim() 
+                                : null,
+                            sourcePlatform: selectedPlatform,
+                          );
+                          
+                          try {
+                            // Call API to create event
+                            await eventRepository.createEvent(request);
+                            
+                            // Show success feedback
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('일정이 성공적으로 추가되었습니다'),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                              Navigator.of(context).pop();
+                              
+                              // 콜백 호출하여 홈 화면 새로고침
+                              widget.onEventCreated?.call();
+                            }
+                          } catch (e) {
+                            // Show error feedback
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('일정 추가 실패: ${e.toString()}'),
+                                  behavior: SnackBarBehavior.floating,
+                                  backgroundColor: Theme.of(context).colorScheme.error,
+                                ),
+                              );
+                            }
+                          }
                         }
                       : null,
                   child: const Text('모으기'),

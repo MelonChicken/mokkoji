@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../theme/tokens.dart';
 import '../widgets/source_chip.dart';
 import '../widgets/avatar_stack.dart';
+import '../data/repositories/event_repository.dart';
+import '../features/events/data/event_entity.dart';
 
 class DetailScreen extends StatefulWidget {
   final String eventId;
@@ -18,17 +21,109 @@ class DetailScreen extends StatefulWidget {
 
 class _DetailScreenState extends State<DetailScreen> {
   bool _isNotificationEnabled = false;
-  bool _isLoading = false;
+  bool _isLoading = true;
   bool _isOffline = false;
   bool _hasError = false;
+  EventEntity? _event;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEvent();
+  }
+
+  Future<void> _loadEvent() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      final event = await eventRepository.getById(widget.eventId);
+      
+      if (mounted) {
+        setState(() {
+          _event = event;
+          _isLoading = false;
+          _hasError = event == null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     
-    // 더미 데이터
-    final eventData = _getEventData();
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('일정 내용'),
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _handleBackNavigation(context),
+          ),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_hasError || _event == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('일정 내용'),
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _handleBackNavigation(context),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 64,
+                color: colorScheme.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '일정을 불러올 수 없습니다',
+                style: textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '일정이 삭제되었거나 접근할 수 없습니다',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _loadEvent,
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Convert EventEntity to display data
+    final eventData = _convertEventToDisplayData(_event!);
+    final title = _event!.title;
     
     return Scaffold(
       // AppBar
@@ -95,20 +190,21 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _buildOfflineBanner() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      color: Colors.grey.shade300,
+      color: colorScheme.surfaceContainerHighest,
       child: Row(
         children: [
-          Icon(Icons.wifi_off, size: 16, color: Colors.grey.shade700),
+          Icon(Icons.wifi_off, size: 16, color: colorScheme.onSurfaceVariant),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '오프라인 – 캐시 데이터를 표시 중 (마지막 동기화 09:30)',
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.grey.shade700,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -118,22 +214,29 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _buildErrorBanner() {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      color: Colors.red.shade100,
+      color: colorScheme.errorContainer,
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 16, color: Colors.red.shade700),
+          Icon(Icons.error_outline, size: 16, color: colorScheme.onErrorContainer),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               '불러오지 못했어요.',
-              style: TextStyle(fontSize: 14),
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onErrorContainer,
+              ),
             ),
           ),
           TextButton(
             onPressed: () => _retry(),
+            style: TextButton.styleFrom(
+              foregroundColor: colorScheme.onErrorContainer,
+            ),
             child: const Text('다시 시도'),
           ),
         ],
@@ -573,14 +676,6 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  void _deleteEvent() {
-    // TODO: Implement delete logic
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('일정이 삭제되었습니다')),
-    );
-    _handleBackNavigation(context);
-  }
-
   void _openNavigation(String location) {
     // TODO: Implement navigation to maps
     ScaffoldMessenger.of(context).showSnackBar(
@@ -600,38 +695,82 @@ class _DetailScreenState extends State<DetailScreen> {
       ),
     );
   }
+  
+  /// EventEntity를 UI용 데이터로 변환
+  Map<String, dynamic> _convertEventToDisplayData(EventEntity event) {
+    // Parse start date time
+    final startDateTime = DateTime.parse(event.startDt);
+    final endDateTime = event.endDt != null ? DateTime.parse(event.endDt!) : null;
+    
+    // Format date
+    final dateFormat = DateFormat('yyyy년 MM월 dd일', 'ko');
+    final formattedDate = dateFormat.format(startDateTime);
+    
+    // Format time
+    String? formattedTime;
+    if (!event.allDay) {
+      final timeFormat = DateFormat('HH:mm');
+      final startTime = timeFormat.format(startDateTime);
+      final endTime = endDateTime != null ? timeFormat.format(endDateTime) : null;
+      
+      if (endTime != null) {
+        formattedTime = '$startTime - $endTime';
+      } else {
+        formattedTime = startTime;
+      }
+    }
+    
+    // Determine source type
+    SourceType sourceType;
+    switch (event.sourcePlatform.toLowerCase()) {
+      case 'kakao':
+        sourceType = SourceType.kakao;
+        break;
+      case 'naver':
+        sourceType = SourceType.naver;
+        break;
+      case 'google':
+        sourceType = SourceType.google;
+        break;
+      default:
+        sourceType = SourceType.google; // default fallback
+    }
+    
+    return {
+      'title': event.title,
+      'time': formattedTime,
+      'date': formattedDate,
+      'place': event.location,
+      'source': sourceType,
+      'allDay': event.allDay,
+      'status': event.status ?? 'confirmed',
+      'syncStatus': 'synced', // assume synced for simplicity
+      'participants': event.attendees?.map((a) => a['name'] ?? '').toList(),
+      'memo': event.description,
+      'link': event.url,
+    };
+  }
+
+  void _deleteEvent() async {
+    try {
+      await eventRepository.deleteEvent(widget.eventId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('일정이 삭제되었습니다')),
+        );
+        _handleBackNavigation(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('삭제 실패: ${e.toString()}')),
+        );
+      }
+    }
+  }
 
   void _retry() {
-    setState(() {
-      _hasError = false;
-      _isLoading = true;
-    });
-    
-    // TODO: Implement retry logic
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    });
-  }
-  
-  Map<String, dynamic> _getEventData() {
-    return {
-      'title': '디자인 킥오프 미팅',
-      'time': '09:30 - 11:00',
-      'date': '2024년 12월 31일',
-      'place': '스타벅스 강남역점',
-      'source': SourceType.google,
-      'allDay': false,
-      'status': 'confirmed', // confirmed, tentative, canceled
-      'syncStatus': 'synced', // synced, pending, error
-      'participants': ['김철수', '이영희', '박민수', '최지연', '정우진', '송하나'],
-      'memo': '''프로젝트 초기 방향성을 논의하고 디자인 컨셉을 확정하는 미팅입니다. 
-각자 준비해온 아이디어를 공유하고, 다음 단계 일정을 조율할 예정입니다.
-노트북과 관련 자료를 준비해주세요.''',
-      'link': 'https://docs.google.com/document/d/example-meeting-agenda',
-    };
+    _loadEvent();
   }
 }

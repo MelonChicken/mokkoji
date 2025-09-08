@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/events/data/events_repository.dart';
+import '../features/events/providers/events_providers.dart';
 
 /// 앱 생명주기 기반 자동 동기화 관리자
 class AppLifecycleSync with WidgetsBindingObserver {
