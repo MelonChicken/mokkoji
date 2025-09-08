@@ -43,7 +43,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _jumpToNowInitial() {
-    _timelineKey.currentState?.jumpToInclude(AppTime.nowKst());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _timelineKey.currentState?.jumpToInclude(AppTime.nowKst());
+    });
   }
 
   void _jumpToNow() {
@@ -316,6 +318,10 @@ class _DayTimelineViewWrapperState extends State<_DayTimelineViewWrapper> {
 
   void jumpToNow() {
     _timelineKey.currentState?.jumpToNow();
+  }
+  
+  void jumpToInclude(DateTime target, {double anchor = 0.3}) {
+    _timelineKey.currentState?.jumpToInclude(target, anchor: anchor);
   }
 
   @override
