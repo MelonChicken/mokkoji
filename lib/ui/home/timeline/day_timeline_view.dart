@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../../features/events/data/event_entity.dart';
 import '../../../theme/tokens.dart';
 import '../../../widgets/source_chip.dart';
+import '../../../core/time/app_time.dart';
 
 class TimelineEvent {
   final String id;
@@ -90,7 +91,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
   }
 
   void jumpToInclude(DateTime target, {double anchor = 0.3}) {
-    final minutesFromMidnight = target.hour * 60 + target.minute;
+    final minutesFromMidnight = AppTime.minutesFromMidnightKst(target);
     final pixelsPerMinute = _hourHeight / 60.0;
     final targetOffset = minutesFromMidnight * pixelsPerMinute;
     
@@ -110,21 +111,17 @@ class DayTimelineViewState extends State<DayTimelineView> {
   }
 
   void jumpToNow() {
-    final now = DateTime.now();
-    if (_isSameDay(now, widget.date)) {
+    final now = AppTime.nowKst();
+    if (AppTime.isSameDayKst(now, widget.date)) {
       jumpToInclude(now);
     }
-  }
-
-  bool _isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final isToday = _isSameDay(DateTime.now(), widget.date);
+    final isToday = AppTime.isSameDayKst(AppTime.nowKst(), widget.date);
     
     final timedEvents = widget.events.where((e) => !e.allDay).toList();
     final allDayEvents = widget.events.where((e) => e.allDay).toList();
@@ -239,7 +236,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      DateFormat('HH:mm').format(
+                      DateFormat('HH:mm', 'ko_KR').format(
                         DateTime(2024, 1, 1, hour),
                       ),
                       style: textTheme.labelSmall?.copyWith(
@@ -294,8 +291,8 @@ class DayTimelineViewState extends State<DayTimelineView> {
 
   Widget _buildCurrentTimeLine(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final now = DateTime.now();
-    final minutesFromMidnight = now.hour * 60 + now.minute;
+    final now = AppTime.nowKst();
+    final minutesFromMidnight = AppTime.minutesFromMidnightKst(now);
     final pixelsPerMinute = _hourHeight / 60.0;
     final topPosition = minutesFromMidnight * pixelsPerMinute;
 
@@ -319,7 +316,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
                 borderRadius: BorderRadius.circular(AppTokens.radiusSm),
               ),
               child: Text(
-                DateFormat('HH:mm').format(now),
+                DateFormat('HH:mm', 'ko_KR').format(now),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onError,
                   fontWeight: FontWeight.w700,

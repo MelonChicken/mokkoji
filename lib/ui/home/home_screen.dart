@@ -5,41 +5,12 @@ import '../../data/repositories/today_summary_repository.dart';
 import '../../data/models/today_summary_data.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/source_chip.dart';
-import 'today_summary_card.dart';
+import '../../core/time/app_time.dart';
+import 'summary/sticky_summary_header.dart';
+import 'summary/today_summary_card.dart';
+import 'summary/today_summary_layout.dart';
 import 'timeline/day_timeline_view.dart';
 
-class StickyHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final Widget child;
-  final double height;
-
-  StickyHeaderDelegate({
-    required this.child,
-    required this.height,
-  });
-
-  @override
-  double get minExtent => height;
-
-  @override
-  double get maxExtent => height;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: child,
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) {
-    return oldDelegate != this;
-  }
-}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -72,19 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _jumpToNowInitial() {
-    final now = DateTime.now();
-    final minutesFromMidnight = now.hour * 60 + now.minute;
-    const hourHeight = 80.0;
-    final pixelsPerMinute = hourHeight / 60.0;
-    const anchor = 0.3;
-    
-    if (_timelineController.hasClients) {
-      final viewportHeight = _timelineController.position.viewportDimension;
-      final targetOffset = (minutesFromMidnight * pixelsPerMinute - viewportHeight * anchor)
-          .clamp(0.0, _timelineController.position.maxScrollExtent);
-      
-      _timelineController.jumpTo(targetOffset);
-    }
+    _timelineKey.currentState?.jumpToInclude(AppTime.nowKst());
   }
 
   void _jumpToNow() {
@@ -114,28 +73,38 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             SliverPersistentHeader(
               pinned: true,
-              delegate: StickyHeaderDelegate(
-                height: 180,
-                child: Container(
-                  padding: const EdgeInsets.all(AppTokens.s16),
-                  child: StreamBuilder<TodaySummaryData>(
-                    stream: _summaryRepository.stream,
-                    builder: (context, snapshot) {
-                      final data = snapshot.data ?? TodaySummaryData(
-                        count: 0,
-                        next: null,
-                        lastSyncAt: DateTime.now(),
-                        offline: true,
-                      );
-                      
-                      return TodaySummaryCard(
-                        data: data,
-                        onViewDetails: () => context.go('/agenda'),
-                        onJumpToNow: _jumpToNow,
-                      );
-                    },
-                  ),
-                ),
+              delegate: StickySummaryHeader(
+                minHeight: 92,
+                maxHeightCap: 220,
+                childBuilder: (context, maxWidth) {
+                  return Container(
+                    padding: const EdgeInsets.all(AppTokens.s16),
+                    child: StreamBuilder<TodaySummaryData>(
+                      stream: _summaryRepository.stream,
+                      builder: (context, snapshot) {
+                        final data = snapshot.data ?? TodaySummaryData(
+                          count: 0,
+                          next: null,
+                          lastSyncAt: AppTime.nowKst(),
+                          offline: true,
+                        );
+                        
+                        return TodaySummaryCard(
+                          data: data,
+                          onViewDetails: () => context.go('/agenda'),
+                          onJumpToNow: _jumpToNow,
+                        );
+                      },
+                    ),
+                  );
+                },
+                heightMeasurer: (context, maxWidth) {
+                  return TodaySummaryLayout.computeHeight(
+                    context,
+                    hasNext: _summaryRepository.currentData?.next != null,
+                    showSyncChip: _summaryRepository.currentData?.offline ?? false,
+                  );
+                },
               ),
             ),
             

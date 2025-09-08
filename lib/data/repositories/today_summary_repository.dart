@@ -2,6 +2,7 @@ import 'dart:async';
 import '../../features/events/data/events_dao.dart';
 import '../../features/events/data/event_entity.dart';
 import '../../db/db_signal.dart';
+import '../../core/time/app_time.dart';
 import '../models/today_summary_data.dart';
 
 class TodaySummaryRepository {
@@ -28,9 +29,8 @@ class TodaySummaryRepository {
 
   Future<void> _refreshData() async {
     try {
-      final now = DateTime.now();
-      final startOfToday = DateTime(now.year, now.month, now.day);
-      final endOfToday = startOfToday.add(const Duration(days: 1));
+      final now = AppTime.nowKst();
+      final (startOfToday, endOfToday) = AppTime.todayRangeKst();
       
       final events = await _dao.range(
         startOfToday.toIso8601String(),
@@ -39,17 +39,14 @@ class TodaySummaryRepository {
       
       final todayEvents = events.where((event) {
         final eventDate = DateTime.parse(event.startDt);
-        return eventDate.year == now.year &&
-               eventDate.month == now.month &&
-               eventDate.day == now.day &&
-               event.deletedAt == null;
+        return AppTime.isSameDayKst(eventDate, now) && event.deletedAt == null;
       }).toList();
       
       todayEvents.sort((a, b) => a.startDt.compareTo(b.startDt));
       
       EventOccurrence? nextEvent;
       final upcomingEvents = todayEvents.where((event) {
-        final eventTime = DateTime.parse(event.startDt);
+        final eventTime = AppTime.toKst(DateTime.parse(event.startDt));
         return eventTime.isAfter(now);
       }).toList();
       
@@ -70,7 +67,7 @@ class TodaySummaryRepository {
       final fallbackData = TodaySummaryData(
         count: 0,
         next: null,
-        lastSyncAt: DateTime.now(),
+        lastSyncAt: AppTime.nowKst(),
         offline: true,
       );
       
@@ -84,9 +81,8 @@ class TodaySummaryRepository {
   }
 
   Future<List<EventEntity>> getTodayEvents() async {
-    final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day);
-    final endOfToday = startOfToday.add(const Duration(days: 1));
+    final now = AppTime.nowKst();
+    final (startOfToday, endOfToday) = AppTime.todayRangeKst();
     
     final events = await _dao.range(
       startOfToday.toIso8601String(),
@@ -95,10 +91,7 @@ class TodaySummaryRepository {
     
     return events.where((event) {
       final eventDate = DateTime.parse(event.startDt);
-      return eventDate.year == now.year &&
-             eventDate.month == now.month &&
-             eventDate.day == now.day &&
-             event.deletedAt == null;
+      return AppTime.isSameDayKst(eventDate, now) && event.deletedAt == null;
     }).toList();
   }
 
