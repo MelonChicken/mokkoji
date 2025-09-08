@@ -15,20 +15,18 @@ class StickySummaryHeader extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  double get minExtent => _computeExtent(minHeight);
+  double get minExtent => minHeight;
 
   @override
-  double get maxExtent => _computeExtent(maxHeightCap);
+  double get maxExtent => maxHeightCap;
 
-  double _computeExtent(double fallback) {
-    return fallback.clamp(minHeight, maxHeightCap);
-  }
-
-  double _measureRequiredHeight(BuildContext context, double maxWidth) {
+  double _getActualMaxHeight(BuildContext context, double maxWidth) {
     if (heightMeasurer != null) {
-      return heightMeasurer!(context, maxWidth);
+      final measuredHeight = heightMeasurer!(context, maxWidth);
+      // Always cap at maxHeightCap to prevent geometry violations
+      return measuredHeight.clamp(minHeight, maxHeightCap);
     }
-    return minHeight;
+    return maxHeightCap;
   }
 
   @override
@@ -38,14 +36,18 @@ class StickySummaryHeader extends SliverPersistentHeaderDelegate {
     bool overlapsContent,
   ) {
     final maxWidth = MediaQuery.of(context).size.width;
-    final requiredHeight = _measureRequiredHeight(context, maxWidth);
-    final actualHeight = requiredHeight.clamp(minHeight, maxHeightCap);
+    
+    // Get the actual desired height (capped appropriately)
+    final actualMaxHeight = _getActualMaxHeight(context, maxWidth);
+    
+    // Calculate current extent considering shrink offset
+    final currentExtent = (actualMaxHeight - shrinkOffset).clamp(minExtent, actualMaxHeight);
 
-    return Container(
-      color: Theme.of(context).colorScheme.surface,
-      child: SizedBox(
-        height: actualHeight,
-        width: maxWidth,
+    return SizedBox(
+      height: currentExtent,
+      width: maxWidth,
+      child: Container(
+        color: Theme.of(context).colorScheme.surface,
         child: childBuilder(context, maxWidth),
       ),
     );

@@ -95,6 +95,8 @@ class DayTimelineViewState extends State<DayTimelineView> {
     final pixelsPerMinute = _hourHeight / 60.0;
     final targetOffset = minutesFromMidnight * pixelsPerMinute;
     
+    if (!mounted) return;
+    
     if (_scrollController.hasClients) {
       final viewportHeight = _scrollController.position.viewportDimension;
       final adjustedOffset = (targetOffset - viewportHeight * anchor).clamp(
@@ -107,6 +109,13 @@ class DayTimelineViewState extends State<DayTimelineView> {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    } else {
+      // Schedule jump for next frame when controller has clients
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          jumpToInclude(target, anchor: anchor);
+        }
+      });
     }
   }
 
