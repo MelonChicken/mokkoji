@@ -67,10 +67,10 @@ class DayTimelineView extends StatefulWidget {
   });
 
   @override
-  State<DayTimelineView> createState() => _DayTimelineViewState();
+  State<DayTimelineView> createState() => DayTimelineViewState();
 }
 
-class _DayTimelineViewState extends State<DayTimelineView> {
+class DayTimelineViewState extends State<DayTimelineView> {
   late ScrollController _scrollController;
   static const double _hourHeight = 80.0;
   static const double _timeColumnWidth = 60.0;

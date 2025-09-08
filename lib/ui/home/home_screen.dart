@@ -343,7 +343,7 @@ class _DayTimelineViewWrapper extends StatefulWidget {
 }
 
 class _DayTimelineViewWrapperState extends State<_DayTimelineViewWrapper> {
-  final GlobalKey<DayTimelineViewState> _timelineKey = GlobalKey();
+  final GlobalKey<DayTimelineViewState> _timelineKey = GlobalKey<DayTimelineViewState>();
 
   void jumpToNow() {
     _timelineKey.currentState?.jumpToNow();

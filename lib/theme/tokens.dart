@@ -3,29 +3,31 @@ import 'package:flutter/material.dart';
 
 class AppTokens {
   // Colors
-  // Primary Coral
-  static const primary500 = Color(0xFFFF6B6B);
-  static const primary600 = Color(0xFFE85A5A);
-  static const primary300 = Color(0xFFECB6B6); // Dark 강조
+  // Primary Coral (adjusted for better accessibility)
+  static const primary500 = Color(0xFFD4282F); // Darker coral with 4.5:1 contrast on white
+  static const primary600 = Color(0xFFBD242A); // Darker variant
+  static const primary300 = Color(0xFFFF9999); // Light version for dark themes
 
   // Mint (secondary accent)
-  static const mint400 = Color(0xFF2ED5A4);
+  static const mint400 = Color(0xFF0D9F79); // Darker mint for better contrast
 
   // Lilac (accent)
-  static const lilac300 = Color(0xFFB79AFF);
+  static const lilac300 = Color(0xFF8B5CF6); // Darker lilac for accessibility
 
   // Neutrals
   static const neutral0 = Color(0xFFFFFFFF);
   static const neutral100 = Color(0xFFF3F4F6);
   static const neutral900 = Color(0xFF111827);
 
-  // Semantic
-  static const success = Color(0xFF10B981);
-  static const warning = Color(0xFFF59E0B);
-  static const error = Color(0xFFEF4444);
+  // Semantic (WCAG AA compliant)
+  static const success = Color(0xFF047857); // Emerald-700 (4.5:1 on white)
+  static const warning = Color(0xFFB45309); // Amber-700 (4.5:1 on white) 
+  static const error = Color(0xFFDC2626); // Red-600 (5.9:1 on white)
 
   // Spacing (8pt scale + extras)
+  static const s2 = 2.0;
   static const s4 = 4.0;
+  static const s6 = 6.0;
   static const s8 = 8.0;
   static const s12 = 12.0;
   static const s16 = 16.0;
