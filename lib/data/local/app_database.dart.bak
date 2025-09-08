@@ -1,0 +1,240 @@
+// Main database implementation with Drift for local-first architecture
+// Provides type-safe database operations with automatic migration support
+// Handles multi-platform calendar data with UTC storage and KST display conversion
+
+import 'dart:io';
+import 'package:drift/drift.dart';
+import 'package:drift_sqflite/drift_sqflite.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
+
+part 'app_database.g.dart';
+
+@DataClass()
+class Calendar extends Table {
+  TextColumn get id => text()();
+  TextColumn get displayName => text()();
+  TextColumn get sourcePlatform => text().nullable()();
+  TextColumn get externalCalendarId => text().nullable()();
+  TextColumn get tz => text().withDefault(const Constant('Asia/Seoul'))();
+  IntColumn get createdAt => integer().withDefault(currentDateAndTime)();
+  IntColumn get updatedAt => integer().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClass()
+class Event extends Table {
+  TextColumn get id => text()();
+  TextColumn get calendarId => text().references(Calendar, #id)();
+  TextColumn get externalEventId => text().nullable()();
+  TextColumn get title => text()();
+  TextColumn get description => text().nullable()();
+  IntColumn get startUtc => integer()(); // Unix timestamp in UTC
+  IntColumn get endUtc => integer()(); // Unix timestamp in UTC
+  BoolColumn get allDay => boolean().withDefault(const Constant(false))();
+  TextColumn get location => text().nullable()();
+  TextColumn get recurrenceRule => text().nullable()(); // RRULE string
+  IntColumn get externalUpdatedAt => integer().nullable()();
+  TextColumn get externalVersion => text().nullable()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+  IntColumn get lastModifiedLocal => integer().withDefault(currentDateAndTime)();
+  TextColumn get syncStatus => text().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClass()
+class EventOverride extends Table {
+  TextColumn get id => text()();
+  TextColumn get eventId => text().references(Event, #id)();
+  TextColumn get occurrenceDate => text()(); // YYYY-MM-DD format
+  TextColumn get overrideType => text().withDefault(const Constant('modification'))();
+  TextColumn get title => text().nullable()();
+  TextColumn get description => text().nullable()();
+  IntColumn get startUtc => integer().nullable()();
+  IntColumn get endUtc => integer().nullable()();
+  TextColumn get location => text().nullable()();
+  IntColumn get createdAt => integer().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DataClass()
+class Attendee extends Table {
+  TextColumn get id => text()();
+  TextColumn get eventId => text().references(Event, #id)();
+  TextColumn get email => text().nullable()();
+  TextColumn get displayName => text().nullable()();
+  TextColumn get responseStatus => text().withDefault(const Constant('needsAction'))();
+  BoolColumn get isOrganizer => boolean().withDefault(const Constant(false))();
+  IntColumn get createdAt => integer().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Calendar, Event, EventOverride, Attendee])
+class AppDatabase extends _$AppDatabase {
+  AppDatabase() : super(_openConnection());
+
+  @override
+  int get schemaVersion => 1;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        await m.createAll();
+        
+        // Create indexes for performance
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_events_calendar_start 
+          ON event(calendar_id, start_utc)
+        ''');
+        
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_events_deleted 
+          ON event(deleted)
+        ''');
+        
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_events_sync_status 
+          ON event(sync_status)
+        ''');
+        
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_events_recurrence 
+          ON event(recurrence_rule) 
+          WHERE recurrence_rule IS NOT NULL
+        ''');
+        
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_event_overrides_event_date 
+          ON event_override(event_id, occurrence_date)
+        ''');
+        
+        await customStatement('''
+          CREATE INDEX IF NOT EXISTS idx_attendees_event 
+          ON attendee(event_id)
+        ''');
+      },
+      beforeOpen: (details) async {
+        await customStatement('PRAGMA foreign_keys = ON');
+      },
+    );
+  }
+
+  // Calendar operations
+  Future<List<CalendarData>> getAllCalendars() => select(calendar).get();
+  Stream<List<CalendarData>> watchAllCalendars() => select(calendar).watch();
+
+  Future<CalendarData?> getCalendar(String id) =>
+      (select(calendar)..where((c) => c.id.equals(id))).getSingleOrNull();
+
+  Future<int> insertCalendar(CalendarCompanion calendar) =>
+      into(this.calendar).insert(calendar);
+
+  Future<bool> updateCalendar(CalendarCompanion calendar) =>
+      update(this.calendar).replace(calendar);
+
+  Future<int> deleteCalendar(String id) =>
+      (delete(calendar)..where((c) => c.id.equals(id))).go();
+
+  // Event operations
+  Future<List<EventData>> getEventsForDateRange(DateTime startUtc, DateTime endUtc) {
+    return (select(event)
+          ..where((e) => e.deleted.equals(false))
+          ..where((e) => e.startUtc.isBiggerOrEqualValue(startUtc.millisecondsSinceEpoch ~/ 1000))
+          ..where((e) => e.startUtc.isSmallerOrEqualValue(endUtc.millisecondsSinceEpoch ~/ 1000))
+          ..orderBy([(e) => OrderingTerm(expression: e.startUtc)]))
+        .get();
+  }
+
+  Stream<List<EventData>> watchEventsForDateRange(DateTime startUtc, DateTime endUtc) {
+    return (select(event)
+          ..where((e) => e.deleted.equals(false))
+          ..where((e) => e.startUtc.isBiggerOrEqualValue(startUtc.millisecondsSinceEpoch ~/ 1000))
+          ..where((e) => e.startUtc.isSmallerOrEqualValue(endUtc.millisecondsSinceEpoch ~/ 1000))
+          ..orderBy([(e) => OrderingTerm(expression: e.startUtc)]))
+        .watch();
+  }
+
+  Future<EventData?> getEvent(String id) =>
+      (select(event)..where((e) => e.id.equals(id))).getSingleOrNull();
+
+  Stream<EventData?> watchEvent(String id) =>
+      (select(event)..where((e) => e.id.equals(id))).watchSingleOrNull();
+
+  Future<int> insertEvent(EventCompanion event) =>
+      into(this.event).insert(event);
+
+  Future<bool> updateEvent(EventCompanion event) =>
+      update(this.event).replace(event);
+
+  Future<int> softDeleteEvent(String id) =>
+      (update(event)..where((e) => e.id.equals(id)))
+          .write(EventCompanion(deleted: const Value(true)));
+
+  Future<int> permanentDeleteEvent(String id) =>
+      (delete(event)..where((e) => e.id.equals(id))).go();
+
+  // Event override operations
+  Future<List<EventOverrideData>> getEventOverrides(String eventId) =>
+      (select(eventOverride)..where((o) => o.eventId.equals(eventId))).get();
+
+  Future<int> insertEventOverride(EventOverrideCompanion override) =>
+      into(eventOverride).insert(override);
+
+  Future<bool> updateEventOverride(EventOverrideCompanion override) =>
+      update(eventOverride).replace(override);
+
+  Future<int> deleteEventOverride(String id) =>
+      (delete(eventOverride)..where((o) => o.id.equals(id))).go();
+
+  // Attendee operations
+  Future<List<AttendeeData>> getEventAttendees(String eventId) =>
+      (select(attendee)..where((a) => a.eventId.equals(eventId))).get();
+
+  Future<int> insertAttendee(AttendeeCompanion attendee) =>
+      into(this.attendee).insert(attendee);
+
+  Future<bool> updateAttendee(AttendeeCompanion attendee) =>
+      update(this.attendee).replace(attendee);
+
+  Future<int> deleteAttendee(String id) =>
+      (delete(attendee)..where((a) => a.id.equals(id))).go();
+
+  // Utility methods
+  Future<bool> isDatabaseEmpty() async {
+    final eventCount = await (selectOnly(event)..addColumns([event.id.count()])).getSingle();
+    return eventCount.read(event.id.count()) == 0;
+  }
+
+  Future<void> clearAllData() async {
+    await delete(attendee).go();
+    await delete(eventOverride).go();
+    await delete(event).go();
+    await delete(calendar).go();
+  }
+}
+
+QueryExecutor _openConnection() {
+  return SqfliteQueryExecutor.inDatabaseFolder(
+    path: 'mokkoji.db',
+    logStatements: true,
+  );
+}
+
+// Singleton instance for app-wide database access
+final database = AppDatabase();
+
+// Test acceptance criteria:
+// 1. Database opens without errors and creates all tables with proper indexes
+// 2. Foreign key constraints are enforced (foreign_keys = ON)
+// 3. All CRUD operations work correctly with type safety
+// 4. Stream-based queries provide reactive updates to UI
+// 5. Soft delete functionality preserves data while hiding from normal queries

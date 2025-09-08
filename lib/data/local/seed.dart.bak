@@ -1,0 +1,118 @@
+// Seed data initialization for initial app launch
+// Inserts sample events on first run to demonstrate calendar functionality
+// Uses only database operations, no hardcoded lists in UI components
+
+import 'package:drift/drift.dart';
+import 'package:uuid/uuid.dart';
+import 'app_database.dart';
+
+const _uuid = Uuid();
+
+class SeedData {
+  static Future<void> initializeIfEmpty(AppDatabase db) async {
+    final isEmpty = await db.isDatabaseEmpty();
+    if (!isEmpty) return;
+
+    print('Database is empty, initializing with seed data...');
+
+    // Create default calendar first
+    await _createDefaultCalendar(db);
+    
+    // Insert sample events
+    await _insertSampleEvents(db);
+    
+    print('Seed data initialization complete');
+  }
+
+  static Future<void> _createDefaultCalendar(AppDatabase db) async {
+    await db.insertCalendar(CalendarCompanion.insert(
+      id: 'default-calendar',
+      displayName: '내 캘린더',
+      sourcePlatform: const Value('local'),
+      externalCalendarId: const Value('default-local'),
+      tz: const Value('Asia/Seoul'),
+    ));
+  }
+
+  static Future<void> _insertSampleEvents(AppDatabase db) async {
+    final now = DateTime.now();
+    final kstOffset = const Duration(hours: 9); // KST is UTC+9
+    
+    // Event 1: 모꼬지 킥오프 - 2025-09-02 09:30~10:30 KST
+    final kickoffStart = DateTime(2025, 9, 2, 9, 30).subtract(kstOffset); // Convert to UTC
+    final kickoffEnd = DateTime(2025, 9, 2, 10, 30).subtract(kstOffset);
+    
+    await db.insertEvent(EventCompanion.insert(
+      id: _uuid.v4(),
+      calendarId: 'default-calendar',
+      title: '모꼬지 킥오프',
+      description: const Value('새로운 프로젝트 킥오프 미팅'),
+      startUtc: kickoffStart.millisecondsSinceEpoch ~/ 1000,
+      endUtc: kickoffEnd.millisecondsSinceEpoch ~/ 1000,
+      location: const Value('강남 사무실'),
+    ));
+
+    // Event 2: 디자인 싱크(주간) - WEEKLY;BYDAY=MO,WE 09:00~09:30 KST
+    final designSyncStart = DateTime(2025, 9, 1, 9, 0).subtract(kstOffset); // Monday
+    final designSyncEnd = DateTime(2025, 9, 1, 9, 30).subtract(kstOffset);
+    
+    await db.insertEvent(EventCompanion.insert(
+      id: _uuid.v4(),
+      calendarId: 'default-calendar',
+      title: '디자인 싱크(주간)',
+      description: const Value('주간 디자인 검토 미팅'),
+      startUtc: designSyncStart.millisecondsSinceEpoch ~/ 1000,
+      endUtc: designSyncEnd.millisecondsSinceEpoch ~/ 1000,
+      recurrenceRule: const Value('FREQ=WEEKLY;BYDAY=MO,WE'),
+      location: const Value('디자인팀 회의실'),
+    ));
+
+    // Event 3: 점심 약속 - 2025-09-03 12:00~13:00 KST
+    final lunchStart = DateTime(2025, 9, 3, 12, 0).subtract(kstOffset);
+    final lunchEnd = DateTime(2025, 9, 3, 13, 0).subtract(kstOffset);
+    
+    await db.insertEvent(EventCompanion.insert(
+      id: _uuid.v4(),
+      calendarId: 'default-calendar',
+      title: '점심 약속',
+      description: const Value('팀 점심 식사'),
+      startUtc: lunchStart.millisecondsSinceEpoch ~/ 1000,
+      endUtc: lunchEnd.millisecondsSinceEpoch ~/ 1000,
+      location: const Value('회사 근처 식당'),
+    ));
+
+    // Event 4: 출시 D-데일리(매일) - DAILY;COUNT=5 18:00~18:15 KST
+    final dailyStart = DateTime(2025, 9, 2, 18, 0).subtract(kstOffset);
+    final dailyEnd = DateTime(2025, 9, 2, 18, 15).subtract(kstOffset);
+    
+    await db.insertEvent(EventCompanion.insert(
+      id: _uuid.v4(),
+      calendarId: 'default-calendar',
+      title: '출시 D-데일리(매일)',
+      description: const Value('출시 준비 일일 스탠드업'),
+      startUtc: dailyStart.millisecondsSinceEpoch ~/ 1000,
+      endUtc: dailyEnd.millisecondsSinceEpoch ~/ 1000,
+      recurrenceRule: const Value('FREQ=DAILY;COUNT=5'),
+      location: const Value('온라인 미팅'),
+    ));
+  }
+
+  static Future<void> clearAllData(AppDatabase db) async {
+    await db.clearAllData();
+    print('All seed data cleared');
+  }
+
+  static Future<void> reinitialize(AppDatabase db) async {
+    await clearAllData(db);
+    await _createDefaultCalendar(db);
+    await _insertSampleEvents(db);
+    print('Database reinitialized with fresh seed data');
+  }
+}
+
+// Test acceptance criteria:
+// 1. Seed data is inserted only when database is completely empty
+// 2. All sample events are stored in UTC and properly converted from KST
+// 3. RRULE patterns (WEEKLY, DAILY) are correctly formatted for expansion
+// 4. No hardcoded event lists remain in UI components - all data comes from DB
+// 5. Seed data covers different event types: one-time, weekly recurring, daily recurring

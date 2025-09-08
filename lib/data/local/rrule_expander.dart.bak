@@ -1,0 +1,262 @@
+// RRULE expansion utility for recurring events (DAILY/WEEKLY support)
+// Expands recurring events into individual occurrences within query windows
+// Supports basic RRULE patterns with UNTIL/COUNT limitations and BYDAY parsing
+
+import 'package:rrule/rrule.dart';
+import 'app_database.dart';
+
+class RruleExpander {
+  static List<EventOccurrence> expandEventsInWindow(
+    List<EventData> events,
+    DateTime windowStart,
+    DateTime windowEnd,
+  ) {
+    final occurrences = <EventOccurrence>[];
+    
+    for (final event in events) {
+      if (event.recurrenceRule != null && event.recurrenceRule!.isNotEmpty) {
+        // Expand recurring event
+        final expandedOccurrences = _expandSingleEvent(event, windowStart, windowEnd);
+        occurrences.addAll(expandedOccurrences);
+      } else {
+        // Single event - check if it falls within window
+        final eventStart = DateTime.fromMillisecondsSinceEpoch(event.startUtc * 1000);
+        if (eventStart.isAfter(windowStart.subtract(const Duration(days: 1))) &&
+            eventStart.isBefore(windowEnd.add(const Duration(days: 1)))) {
+          occurrences.add(EventOccurrence(
+            event: event,
+            startTime: eventStart,
+            endTime: DateTime.fromMillisecondsSinceEpoch(event.endUtc * 1000),
+            isRecurringInstance: false,
+            originalDate: null,
+          ));
+        }
+      }
+    }
+    
+    // Sort by start time
+    occurrences.sort((a, b) => a.startTime.compareTo(b.startTime));
+    return occurrences;
+  }
+
+  static List<EventOccurrence> _expandSingleEvent(
+    EventData event,
+    DateTime windowStart,
+    DateTime windowEnd,
+  ) {
+    try {
+      final rruleString = event.recurrenceRule!;
+      final occurrences = <EventOccurrence>[];
+      
+      // Parse basic RRULE patterns
+      final rrule = RecurrenceRule.fromString(rruleString);
+      final eventStart = DateTime.fromMillisecondsSinceEpoch(event.startUtc * 1000);
+      final eventEnd = DateTime.fromMillisecondsSinceEpoch(event.endUtc * 1000);
+      final duration = eventEnd.difference(eventStart);
+      
+      // Generate occurrences using rrule package
+      final instances = rrule.getInstances(
+        start: windowStart.isBefore(eventStart) ? eventStart : windowStart,
+        before: windowEnd,
+      );
+      
+      for (final instance in instances) {
+        if (instance.isAfter(windowStart.subtract(const Duration(days: 1))) &&
+            instance.isBefore(windowEnd.add(const Duration(days: 1)))) {
+          occurrences.add(EventOccurrence(
+            event: event,
+            startTime: instance,
+            endTime: instance.add(duration),
+            isRecurringInstance: true,
+            originalDate: _formatDateForOverride(instance),
+          ));
+        }
+      }
+      
+      return occurrences;
+    } catch (e) {
+      print('Error expanding RRULE for event ${event.id}: $e');
+      return [];
+    }
+  }
+
+  static List<EventOccurrence> _expandManualRRule(
+    EventData event,
+    DateTime windowStart,
+    DateTime windowEnd,
+  ) {
+    final rruleString = event.recurrenceRule!;
+    final occurrences = <EventOccurrence>[];
+    
+    final eventStart = DateTime.fromMillisecondsSinceEpoch(event.startUtc * 1000);
+    final eventEnd = DateTime.fromMillisecondsSinceEpoch(event.endUtc * 1000);
+    final duration = eventEnd.difference(eventStart);
+    
+    if (rruleString.contains('FREQ=DAILY')) {
+      _expandDaily(event, eventStart, duration, windowStart, windowEnd, occurrences, rruleString);
+    } else if (rruleString.contains('FREQ=WEEKLY')) {
+      _expandWeekly(event, eventStart, duration, windowStart, windowEnd, occurrences, rruleString);
+    }
+    
+    return occurrences;
+  }
+
+  static void _expandDaily(
+    EventData event,
+    DateTime eventStart,
+    Duration duration,
+    DateTime windowStart,
+    DateTime windowEnd,
+    List<EventOccurrence> occurrences,
+    String rruleString,
+  ) {
+    final count = _extractCount(rruleString);
+    final until = _extractUntil(rruleString);
+    
+    var current = eventStart;
+    var instanceCount = 0;
+    
+    while (current.isBefore(windowEnd) && (count == null || instanceCount < count) && 
+           (until == null || current.isBefore(until))) {
+      if (current.isAfter(windowStart.subtract(const Duration(days: 1)))) {
+        occurrences.add(EventOccurrence(
+          event: event,
+          startTime: current,
+          endTime: current.add(duration),
+          isRecurringInstance: true,
+          originalDate: _formatDateForOverride(current),
+        ));
+      }
+      current = current.add(const Duration(days: 1));
+      instanceCount++;
+    }
+  }
+
+  static void _expandWeekly(
+    EventData event,
+    DateTime eventStart,
+    Duration duration,
+    DateTime windowStart,
+    DateTime windowEnd,
+    List<EventOccurrence> occurrences,
+    String rruleString,
+  ) {
+    final count = _extractCount(rruleString);
+    final until = _extractUntil(rruleString);
+    final byDays = _extractByDay(rruleString);
+    
+    // If no BYDAY specified, use the original event's day
+    final daysOfWeek = byDays.isNotEmpty ? byDays : [eventStart.weekday];
+    
+    var current = eventStart;
+    var instanceCount = 0;
+    var weeks = 0;
+    
+    while (current.isBefore(windowEnd) && (count == null || instanceCount < count) && 
+           (until == null || current.isBefore(until))) {
+      
+      // Check each day of the week
+      for (final dayOfWeek in daysOfWeek) {
+        final dayInWeek = current.subtract(Duration(days: current.weekday - 1))
+            .add(Duration(days: dayOfWeek - 1));
+        
+        if (dayInWeek.isAfter(windowStart.subtract(const Duration(days: 1))) &&
+            dayInWeek.isBefore(windowEnd.add(const Duration(days: 1))) &&
+            (count == null || instanceCount < count) &&
+            (until == null || dayInWeek.isBefore(until))) {
+          
+          occurrences.add(EventOccurrence(
+            event: event,
+            startTime: dayInWeek,
+            endTime: dayInWeek.add(duration),
+            isRecurringInstance: true,
+            originalDate: _formatDateForOverride(dayInWeek),
+          ));
+          instanceCount++;
+        }
+      }
+      
+      current = current.add(const Duration(days: 7));
+      weeks++;
+    }
+  }
+
+  static int? _extractCount(String rrule) {
+    final countMatch = RegExp(r'COUNT=(\d+)').firstMatch(rrule);
+    return countMatch != null ? int.parse(countMatch.group(1)!) : null;
+  }
+
+  static DateTime? _extractUntil(String rrule) {
+    final untilMatch = RegExp(r'UNTIL=(\d{8}T\d{6}Z)').firstMatch(rrule);
+    if (untilMatch == null) return null;
+    
+    try {
+      final untilString = untilMatch.group(1)!;
+      return DateTime.parse(
+        '${untilString.substring(0, 4)}-'
+        '${untilString.substring(4, 6)}-'
+        '${untilString.substring(6, 8)}T'
+        '${untilString.substring(9, 11)}:'
+        '${untilString.substring(11, 13)}:'
+        '${untilString.substring(13, 15)}Z'
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static List<int> _extractByDay(String rrule) {
+    final byDayMatch = RegExp(r'BYDAY=([^;]+)').firstMatch(rrule);
+    if (byDayMatch == null) return [];
+    
+    final byDayString = byDayMatch.group(1)!;
+    final dayAbbreviations = byDayString.split(',');
+    
+    const dayMap = {
+      'MO': 1, 'TU': 2, 'WE': 3, 'TH': 4, 'FR': 5, 'SA': 6, 'SU': 7
+    };
+    
+    return dayAbbreviations
+        .map((abbr) => dayMap[abbr.toUpperCase()])
+        .where((day) => day != null)
+        .map((day) => day!)
+        .toList();
+  }
+
+  static String _formatDateForOverride(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+           '${date.month.toString().padLeft(2, '0')}-'
+           '${date.day.toString().padLeft(2, '0')}';
+  }
+}
+
+class EventOccurrence {
+  final EventData event;
+  final DateTime startTime;
+  final DateTime endTime;
+  final bool isRecurringInstance;
+  final String? originalDate; // YYYY-MM-DD format for recurring instances
+
+  const EventOccurrence({
+    required this.event,
+    required this.startTime,
+    required this.endTime,
+    required this.isRecurringInstance,
+    this.originalDate,
+  });
+
+  String get displayTitle => event.title;
+  String? get displayDescription => event.description;
+  String? get displayLocation => event.location;
+  bool get isAllDay => event.allDay;
+  String get eventId => isRecurringInstance 
+      ? '${event.id}_$originalDate' 
+      : event.id;
+}
+
+// Test acceptance criteria:
+// 1. DAILY and WEEKLY RRULE patterns are correctly expanded within query windows
+// 2. COUNT and UNTIL limitations are properly enforced
+// 3. BYDAY parsing for weekly events works correctly (MO,WE format)
+// 4. Event occurrences are sorted chronologically
+// 5. Both single and recurring events are handled in mixed event lists
