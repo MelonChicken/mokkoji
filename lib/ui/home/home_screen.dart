@@ -1,33 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../features/events/data/events_dao.dart';
-import '../../data/repositories/today_summary_repository.dart';
 import '../../data/models/today_summary_data.dart';
+import '../../data/providers/unified_providers.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/source_chip.dart';
 import '../../core/time/app_time.dart';
-import 'summary/sticky_summary_header.dart';
+import '../../core/time/date_key.dart';
+import 'summary/fixed_height_header.dart';
 import 'summary/today_summary_card.dart';
 import 'summary/today_summary_layout.dart';
 import 'timeline/day_timeline_view.dart';
+import '../common/measure_size.dart';
+import '../../devtools/consistency_debug_panel.dart';
+import '../../devtools/dev_config.dart';
+import 'package:flutter/foundation.dart';
 
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  late final TodaySummaryRepository _summaryRepository;
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final ScrollController _timelineController;
   final GlobalKey<_DayTimelineViewWrapperState> _timelineKey = GlobalKey();
+  double _navBarH = 0, _fabCardH = 0;
   
   @override
   void initState() {
     super.initState();
-    _summaryRepository = TodaySummaryRepository(dao: EventsDao());
     _timelineController = ScrollController();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -37,7 +41,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _summaryRepository.dispose();
     _timelineController.dispose();
     super.dispose();
   }
@@ -52,11 +55,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _timelineKey.currentState?.jumpToNow();
   }
 
+  double _computeSummaryHeight(BuildContext context, {required bool hasNext}) {
+    // 화면/텍스트 스케일에 따른 대략값. 필요하면 정교화 가능.
+    final scale = MediaQuery.of(context).textScaler.scale(1.0).clamp(1.0, 1.3);
+    final base = 32.0 /*헤더*/ + 16.0 /*gap*/ + (hasNext ? 88.0 : 0.0) + 16.0 /*gap*/ + 52.0 /*버튼 행*/ + 32.0 /*패딩 합산*/ + 24.0 /*동기화 라인*/;
+    return (base * scale).clamp(120.0, 280.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    
+    // 하단 예약: 시스템 제스처 + 실측 기반
+    final mq = MediaQuery.of(context);
+    final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
+    final reservedBottom = systemBottom + _navBarH + _fabCardH + 12; // 실측 기반
 
     return Scaffold(
+      extendBody: true, // 유지 가능
+      // bottomNavigationBar: MeasureSize(
+      //   onChange: (s) => setState(() => _navBarH = s.height),
+      //   child: const MyBottomNavBar(), // 네가 쓰는 하단바 위젯
+      // ),
+      // floatingActionButton: MeasureSize(
+      //   onChange: (s) => setState(() => _fabCardH = s.height),
+      //   child: const MyFabCardButton(), // "모으기" 카드 형태 FAB
+      // ),
       appBar: AppBar(
         title: const Text(
           '모꼬지',
@@ -71,60 +95,120 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: StickySummaryHeader(
-                minHeight: 92,
-                maxHeightCap: 220,
-                childBuilder: (context, maxWidth) {
-                  return Container(
-                    padding: const EdgeInsets.all(AppTokens.s16),
-                    child: StreamBuilder<TodaySummaryData>(
-                      stream: _summaryRepository.stream,
-                      builder: (context, snapshot) {
-                        final data = snapshot.data ?? TodaySummaryData(
-                          count: 0,
-                          next: null,
-                          lastSyncAt: AppTime.nowKst(),
-                          offline: true,
-                        );
-                        
-                        return TodaySummaryCard(
-                          data: data,
-                          onViewDetails: () => context.go('/agenda'),
-                          onJumpToNow: _jumpToNow,
-                        );
-                      },
+        child: Stack(
+          children: [
+            Consumer(
+              builder: (context, ref, child) {
+                // Use unified providers with stable DateKey
+                final todayKey = ref.watch(todayKeyProvider);
+                final summaryAsync = ref.watch(todaySummaryProvider(todayKey));
+                final occurrencesAsync = ref.watch(occurrencesForDayProvider(todayKey));
+                
+                // Debug logging
+                if (kDebugMode) {
+                  occurrencesAsync.whenData((occs) => 
+                    debugPrint('UI got $todayKey count=${occs.length}'));
+                }
+            
+                return summaryAsync.when(
+                  loading: () => _buildLoadingSkeleton(context),
+                  error: (error, stack) => _buildErrorState(context, error, stack),
+              data: (summaryData) {
+                final hasNext = summaryData.next != null;
+                final headerHeight = _computeSummaryHeight(context, hasNext: hasNext);
+                
+                // 상단 요약 카드 높이(이미 계산한 headerHeight 사용)
+                final double reservedTop = headerHeight + 8; // 카드와 타임라인 사이 간격 포함
+                
+                // 하단 예약: 시스템 제스처 + 실측 기반
+                final mq = MediaQuery.of(context);
+                final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
+                final reservedBottom = systemBottom + _navBarH + _fabCardH + 12; // 실측 기반
+            
+                return CustomScrollView(
+                  slivers: [
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: FixedHeightHeader(
+                        height: headerHeight,
+                        child: Container(
+                          color: Theme.of(context).colorScheme.surface,
+                          padding: const EdgeInsets.all(AppTokens.s16),
+                          child: TodaySummaryCard(
+                            data: summaryData,
+                            onViewDetails: () => context.go('/agenda'),
+                            onJumpToNow: _jumpToNow,
+                          ),
+                        ),
+                      ),
                     ),
-                  );
-                },
-                heightMeasurer: (context, maxWidth) {
-                  return TodaySummaryLayout.computeHeight(
-                    context,
-                    hasNext: _summaryRepository.currentData?.next != null,
-                    showSyncChip: _summaryRepository.currentData?.offline ?? false,
-                  );
-                },
-              ),
+                    
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: MediaQuery.of(context).size.height - 300,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s16),
+                          child: occurrencesAsync.when(
+                            loading: () => const Center(child: CircularProgressIndicator()),
+                            error: (error, stack) => Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppTokens.s16),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.timeline,
+                                      size: 48,
+                                      color: Theme.of(context).colorScheme.error.withOpacity(0.7),
+                                    ),
+                                    const SizedBox(height: AppTokens.s12),
+                                    Text(
+                                      '타임라인 로드 실패',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppTokens.s8),
+                                    Text(
+                                      error.toString(),
+                                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            data: (occurrences) {
+                              // Trigger initial jump when data loads
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                _jumpToNowInitial();
+                              });
+                              
+                              return _DayTimelineViewWrapper(
+                                key: _timelineKey,
+                                controller: _timelineController,
+                                occurrences: occurrences,
+                                onEventTap: (eventId) => context.go('/detail/$eventId'),
+                                onEventLongPress: _showEventQuickActions,
+                                reservedTop: reservedTop,
+                                reservedBottom: reservedBottom,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+              },
             ),
             
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: MediaQuery.of(context).size.height - 300,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s16),
-                  child: _DayTimelineViewWrapper(
-                    key: _timelineKey,
-                    controller: _timelineController,
-                    summaryRepository: _summaryRepository,
-                    onEventTap: (eventId) => context.go('/detail/$eventId'),
-                    onEventLongPress: _showEventQuickActions,
-                  ),
-                ),
-              ),
-            ),
+            // Debug panel (opt-in only)
+            if (kEnableDevTools && kDebugMode) const ConsistencyDebugPanel(),
           ],
         ),
       ),
@@ -208,8 +292,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _deleteEvent(String eventId) async {
     try {
-      final dao = EventsDao();
-      await dao.softDelete(eventId, DateTime.now().toIso8601String());
+      final writeService = ref.read(eventWriteServiceProvider);
+      await writeService.deleteEvent(eventId);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -293,20 +377,97 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Widget _buildLoadingSkeleton(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Container(
+            height: 200,
+            margin: const EdgeInsets.all(AppTokens.s16),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(AppTokens.radiusLg),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Container(
+            height: 400,
+            margin: const EdgeInsets.symmetric(horizontal: AppTokens.s16),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            ),
+            child: const Center(
+              child: Text('타임라인 로딩 중...'),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorState(BuildContext context, Object error, StackTrace? stack) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppTokens.s24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: AppTokens.s16),
+            Text(
+              '일정을 불러올 수 없습니다',
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppTokens.s8),
+            Text(
+              error.toString(),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppTokens.s16),
+            ElevatedButton(
+              onPressed: () {
+                // Force refresh by rebuilding the widget
+                setState(() {});
+              },
+              child: const Text('다시 시도'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DayTimelineViewWrapper extends StatefulWidget {
   final ScrollController controller;
-  final TodaySummaryRepository summaryRepository;
+  final List<EventOccurrence> occurrences;
   final Function(String) onEventTap;
   final Function(String) onEventLongPress;
+  final double reservedTop;
+  final double reservedBottom;
 
   const _DayTimelineViewWrapper({
     super.key,
     required this.controller,
-    required this.summaryRepository,
+    required this.occurrences,
     required this.onEventTap,
     required this.onEventLongPress,
+    required this.reservedTop,
+    required this.reservedBottom,
   });
 
   @override
@@ -326,21 +487,29 @@ class _DayTimelineViewWrapperState extends State<_DayTimelineViewWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<TimelineEvent>>(
-      future: widget.summaryRepository.getTodayEvents().then((events) =>
-        events.map(TimelineEvent.fromEntity).toList()),
-      builder: (context, snapshot) {
-        final events = snapshot.data ?? <TimelineEvent>[];
-        
-        return DayTimelineView(
-          key: _timelineKey,
-          date: DateTime.now(),
-          events: events,
-          controller: widget.controller,
-          onEventTap: widget.onEventTap,
-          onEventLongPress: widget.onEventLongPress,
-        );
-      },
+    // EventOccurrence를 TimelineEvent로 변환
+    final timelineEvents = widget.occurrences.map((occ) => TimelineEvent(
+      id: occ.id,
+      title: occ.title,
+      startTime: occ.startTime,
+      endTime: occ.endTime,
+      allDay: occ.allDay,
+      location: occ.location,
+      sourcePlatform: occ.sourcePlatform,
+      color: occ.platformColor != null 
+          ? Color(int.parse(occ.platformColor!.replaceFirst('#', '0xFF')))
+          : null,
+    )).toList();
+    
+    return DayTimelineView(
+      key: _timelineKey,
+      date: DateTime.now(),
+      events: timelineEvents,
+      controller: widget.controller,
+      onEventTap: widget.onEventTap,
+      onEventLongPress: widget.onEventLongPress,
+      reservedTop: widget.reservedTop,
+      reservedBottom: widget.reservedBottom,
     );
   }
 }

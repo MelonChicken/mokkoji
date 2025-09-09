@@ -43,11 +43,14 @@ class TimelineEvent {
 
   int get durationMinutes {
     if (endTime == null) return 60; // Default 1 hour
-    return endTime!.difference(startTime).inMinutes;
+    final duration = endTime!.difference(startTime).inMinutes;
+    return duration < 1 ? 1 : duration; // 최소 1분 보장
   }
 
   int get startMinuteFromMidnight {
-    return startTime.hour * 60 + startTime.minute;
+    // KST 기준으로 변환 후 자정부터의 분 계산
+    final kstTime = AppTime.toKst(startTime);
+    return kstTime.hour * 60 + kstTime.minute;
   }
 }
 
@@ -57,6 +60,8 @@ class DayTimelineView extends StatefulWidget {
   final Function(String eventId)? onEventTap;
   final Function(String eventId)? onEventLongPress;
   final ScrollController? controller;
+  final double reservedTop;
+  final double reservedBottom;
 
   const DayTimelineView({
     super.key,
@@ -65,6 +70,8 @@ class DayTimelineView extends StatefulWidget {
     this.onEventTap,
     this.onEventLongPress,
     this.controller,
+    this.reservedTop = 0.0,
+    this.reservedBottom = 0.0,
   });
 
   @override
@@ -75,6 +82,16 @@ class DayTimelineViewState extends State<DayTimelineView> {
   late ScrollController _scrollController;
   static const double _hourHeight = 80.0;
   static const double _timeColumnWidth = 60.0;
+  DateTime? _pendingTarget;
+  int _retry = 0;
+  
+  // 뷰포트에서 실사용 가능한 높이(상/하단 예약 영역 제외)
+  double get _effectiveViewport {
+    if (!_scrollController.hasClients) return 0;
+    final raw = _scrollController.position.viewportDimension;
+    final eff = raw - widget.reservedTop - widget.reservedBottom;
+    return eff.clamp(0, raw);
+  }
 
   @override
   void initState() {
@@ -90,32 +107,74 @@ class DayTimelineViewState extends State<DayTimelineView> {
     super.dispose();
   }
 
-  void jumpToInclude(DateTime target, {double anchor = 0.3}) {
-    final minutesFromMidnight = AppTime.minutesFromMidnightKst(target);
-    final pixelsPerMinute = _hourHeight / 60.0;
-    final targetOffset = minutesFromMidnight * pixelsPerMinute;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Enhanced: Support both pending targets and initial now jump
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pendingTarget != null) {
+        jumpToInclude(_pendingTarget!, animate: false);
+        _pendingTarget = null;
+        _retry = 0;
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(DayTimelineView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Handle controller changes and retry pending jumps
+    if (widget.controller != oldWidget.controller) {
+      if (oldWidget.controller == null && _scrollController != widget.controller) {
+        _scrollController.dispose();
+      }
+      _scrollController = widget.controller ?? ScrollController();
+    }
     
-    if (!mounted) return;
-    
-    if (_scrollController.hasClients) {
-      final viewportHeight = _scrollController.position.viewportDimension;
-      final adjustedOffset = (targetOffset - viewportHeight * anchor).clamp(
+    // Retry any pending operations after widget rebuild
+    if (_pendingTarget != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        jumpToInclude(_pendingTarget!, animate: false);
+      });
+    }
+  }
+
+  void jumpToInclude(DateTime target, {double anchor = 0.35, bool animate = false}) {
+    final tryJump = () {
+      if (!mounted) return false;
+      if (!_scrollController.hasClients) {
+        // Store target for retry when controller is ready
+        _pendingTarget = target;
+        return false;
+      }
+      
+      // KST 기준으로 변환 후 분 계산
+      final kstTarget = AppTime.toKst(target);
+      final minutes = kstTarget.hour * 60 + kstTarget.minute;
+      final pixelsPerMinute = _hourHeight / 60.0;
+      final contentOffset = minutes * pixelsPerMinute;
+      
+      // 상단은 reservedTop만큼, 하단은 reservedBottom만큼 비워둠
+      final effVp = _effectiveViewport;
+      final anchorPx = widget.reservedTop + (effVp * anchor);
+      
+      final targetOffset = (contentOffset - anchorPx).clamp(
         0.0, 
         _scrollController.position.maxScrollExtent,
       );
       
-      _scrollController.animateTo(
-        adjustedOffset,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    } else {
-      // Schedule jump for next frame when controller has clients
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollController.hasClients) {
-          jumpToInclude(target, anchor: anchor);
-        }
-      });
+      if (animate) {
+        _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      } else {
+        _scrollController.jumpTo(targetOffset);
+      }
+      return true;
+    };
+
+    if (!tryJump() && _retry < 3) {
+      _pendingTarget = target;
+      _retry++;
+      WidgetsBinding.instance.addPostFrameCallback((_) => jumpToInclude(_pendingTarget!, anchor: anchor, animate: animate));
     }
   }
 
@@ -177,15 +236,23 @@ class DayTimelineViewState extends State<DayTimelineView> {
         Expanded(
           child: SingleChildScrollView(
             controller: _scrollController,
-            child: SizedBox(
-              height: 24 * _hourHeight,
-              child: Stack(
-                children: [
-                  _buildTimeGrid(context),
-                  if (isToday) _buildCurrentTimeLine(context),
-                  _buildEvents(context, timedEvents),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 24시간 그리드(고정 높이)
+                SizedBox(
+                  height: 24 * _hourHeight,
+                  child: Stack(
+                    children: [
+                      _buildTimeGrid(context),
+                      if (isToday) _buildCurrentTimeLine(context),
+                      _buildEvents(context, timedEvents),
+                    ],
+                  ),
+                ),
+                // 하단에 "실제 빈 공간"을 추가해 바/카드 뒤에 안 가리게
+                SizedBox(height: widget.reservedBottom),
+              ],
             ),
           ),
         ),

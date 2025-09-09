@@ -1,15 +1,25 @@
 // Simple event repository using the existing working database system
 // Provides basic event creation functionality
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../../features/events/data/events_dao.dart';
 import '../../features/events/data/event_entity.dart';
+import '../../db/db_signal.dart';
+import '../../core/time/app_time.dart';
+import '../models/today_summary_data.dart';
 
 class EventRepository {
   final EventsDao _dao;
   
   EventRepository(this._dao);
+  
+  /// KST 기준 날짜의 시작 시각 (00:00:00)
+  DateTime dayStartKst(DateTime kst) => DateTime(kst.year, kst.month, kst.day);
+  
+  /// KST 기준 날짜의 종료 시각 (다음날 00:00:00, exclusive)
+  DateTime dayEndExclusiveKst(DateTime kst) => dayStartKst(kst).add(const Duration(days: 1));
 
   // Initialize repository
   Future<void> initialize() async {
@@ -437,6 +447,84 @@ class EventRepository {
     }
   }
 
+  /// KST 기준 하루 동안의 이벤트 occurrence 스트림
+  /// 교집합 기준: (start < dayEnd) && (end > dayStart)
+  Stream<List<EventOccurrence>> watchOccurrencesForDayKst(DateTime kstDate) {
+    final startK = dayStartKst(kstDate);
+    final endK = dayEndExclusiveKst(kstDate);
+    
+    return DbSignal.instance.eventsStream.asyncMap((_) async {
+      try {
+        // 1) DB에서 UTC 데이터 조회 (범위를 넓게 잡아 경계 놀침 방지)
+        final dayBefore = startK.subtract(const Duration(days: 1));
+        final dayAfter = endK.add(const Duration(days: 1));
+        
+        final rawEvents = await _dao.range(
+          dayBefore.toIso8601String(),
+          dayAfter.toIso8601String(),
+        );
+        
+        // 2) 삭제되지 않은 이벤트만 필터
+        final validEvents = rawEvents.where((e) => e.deletedAt == null).toList();
+        
+        // 3) 각 이벤트를 KST로 변환하여 교집합 검사
+        final occurrences = <EventOccurrence>[];
+        
+        for (final event in validEvents) {
+          final startUtc = DateTime.parse(event.startDt);
+          final endUtc = event.endDt != null 
+              ? DateTime.parse(event.endDt!)
+              : startUtc.add(const Duration(hours: 1));
+          
+          final startKst = AppTime.toKst(startUtc);
+          final endKst = AppTime.toKst(endUtc);
+          
+          // 교집합 검사: (start < dayEnd) && (end > dayStart)
+          if (startKst.isBefore(endK) && endKst.isAfter(startK)) {
+            // RRULE 처리가 있다면 여기서 처리
+            // 현재는 단순 이벤트만 처리
+            
+            occurrences.add(EventOccurrence.fromEvent(event));
+          }
+        }
+        
+        // 4) 시작 시각 기준 정렬
+        occurrences.sort((a, b) => a.startTime.compareTo(b.startTime));
+        
+        return occurrences;
+      } catch (e) {
+        if (kDebugMode) debugPrint('❌ Error loading occurrences for $kstDate: $e');
+        return <EventOccurrence>[];
+      }
+    });
+  }
+  
+  /// 오늘 요약 데이터 스트림
+  Stream<TodaySummaryData> watchTodaySummary() {
+    final todayK = dayStartKst(AppTime.nowKst());
+    final occurrencesStream = watchOccurrencesForDayKst(todayK);
+    
+    return occurrencesStream.map((occurrences) {
+      final now = AppTime.nowKst();
+      
+      // 다음 이벤트 찾기
+      EventOccurrence? next;
+      for (final occ in occurrences) {
+        if (occ.startKst.isAfter(now)) {
+          next = occ;
+          break;
+        }
+      }
+      
+      return TodaySummaryData(
+        count: occurrences.length,
+        next: next,
+        lastSyncAt: now,
+        offline: false, // TODO: 실제 오프라인 상태 검사
+      );
+    });
+  }
+  
   // Get events for date range
   Future<List<EventEntity>> getEventsForRange(
     String startIso,
