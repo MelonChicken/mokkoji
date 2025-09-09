@@ -5,48 +5,34 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../data/repositories/event_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/providers/unified_providers.dart';
+import '../../core/time/date_key.dart';
+import '../../core/time/app_time.dart';
 import '../../data/local/rrule_expander.dart';
 
-class AgendaScreen extends StatefulWidget {
+class AgendaScreen extends ConsumerStatefulWidget {
   const AgendaScreen({super.key});
 
   @override
-  State<AgendaScreen> createState() => _AgendaScreenState();
+  ConsumerState<AgendaScreen> createState() => _AgendaScreenState();
 }
 
-class _AgendaScreenState extends State<AgendaScreen> {
+class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   DateTime _selectedDate = DateTime.now();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _showWeekView = false;
-  
-  late Stream<List<EventOccurrence>> _eventsStream;
-
-  @override
-  void initState() {
-    super.initState();
-    eventRepository.initialize();
-    _updateEventsStream();
-  }
-
-  void _updateEventsStream() {
-    if (_showWeekView) {
-      // Week view - show Monday to Sunday
-      final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
-      final endOfWeek = startOfWeek.add(const Duration(days: 6));
-      _eventsStream = eventRepository.watchEventsForRange(startOfWeek, endOfWeek);
-    } else {
-      // Day view - show selected day
-      _eventsStream = eventRepository.watchEventsForDay(_selectedDate);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    
+    // Get current date key for single stream source
+    final selectedKst = AppTime.toKst(_selectedDate);
+    final selectedKey = DateKey.fromKst(selectedKst);
     
     return Scaffold(
       body: NestedScrollView(
@@ -66,7 +52,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
                   onPressed: () {
                     setState(() {
                       _showWeekView = !_showWeekView;
-                      _updateEventsStream();
                     });
                   },
                 ),
@@ -158,7 +143,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
                 _selectedDate = _selectedDate.subtract(
                   Duration(days: _showWeekView ? 7 : 1),
                 );
-                _updateEventsStream();
               });
             },
           ),
@@ -182,7 +166,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
                 _selectedDate = _selectedDate.add(
                   Duration(days: _showWeekView ? 7 : 1),
                 );
-                _updateEventsStream();
               });
             },
           ),
@@ -211,7 +194,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
           onSelectionChanged: (Set<bool> selection) {
             setState(() {
               _showWeekView = selection.first;
-              _updateEventsStream();
             });
           },
         ),
@@ -220,36 +202,49 @@ class _AgendaScreenState extends State<AgendaScreen> {
   }
 
   Widget _buildEventsList() {
-    return StreamBuilder<List<EventOccurrence>>(
-      stream: _eventsStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.error_outline, size: 48),
-                const SizedBox(height: 16),
-                Text('데이터 로드 중 오류가 발생했습니다: ${snapshot.error}'),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      _updateEventsStream();
-                    });
-                  },
-                  child: const Text('다시 시도'),
+    // Get current date key for single stream source
+    final selectedKst = AppTime.toKst(_selectedDate);
+    final selectedKey = DateKey.fromKst(selectedKst);
+    final occurrencesAsync = ref.watch(occurrencesForDayProvider(selectedKey));
+    
+    return occurrencesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '일정 데이터를 불러올 수 없습니다',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
                 ),
-              ],
-            ),
-          );
-        }
-
-        final allEvents = snapshot.data ?? [];
+              ),
+              const SizedBox(height: 8),
+              Text(
+                error.toString(),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => setState(() {}),
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (allEvents) {
         final filteredEvents = _filterEvents(allEvents);
         
         if (filteredEvents.isEmpty) {
@@ -467,7 +462,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
     if (date != null) {
       setState(() {
         _selectedDate = date;
-        _updateEventsStream();
       });
     }
   }
@@ -496,11 +490,30 @@ class _AgendaScreenState extends State<AgendaScreen> {
     }
   }
 
-  void _deleteEvent(String eventId) {
-    eventRepository.deleteEvent(eventId);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('일정이 삭제되었습니다')),
-    );
+  void _deleteEvent(String eventId) async {
+    try {
+      final writeService = ref.read(eventWriteServiceProvider);
+      await writeService.deleteEvent(eventId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('일정이 삭제되었습니다'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('일정 삭제 실패: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   @override

@@ -5,10 +5,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../data/repositories/event_repository.dart';
-import '../../data/local/app_database.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/providers/unified_providers.dart';
 
-class DetailScreen extends StatefulWidget {
+class DetailScreen extends ConsumerStatefulWidget {
   final String eventId;
   
   const DetailScreen({
@@ -17,18 +17,11 @@ class DetailScreen extends StatefulWidget {
   });
 
   @override
-  State<DetailScreen> createState() => _DetailScreenState();
+  ConsumerState<DetailScreen> createState() => _DetailScreenState();
 }
 
-class _DetailScreenState extends State<DetailScreen> {
+class _DetailScreenState extends ConsumerState<DetailScreen> {
   bool _isNotificationEnabled = false;
-  late final Stream<EventData?> _eventStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _eventStream = eventRepository.watchEvent(widget.eventId);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -651,12 +644,31 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  void _deleteEvent() {
-    eventRepository.deleteEvent(widget.eventId);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('일정이 삭제되었습니다')),
-    );
-    _handleBackNavigation(context);
+  void _deleteEvent() async {
+    try {
+      final writeService = ref.read(eventWriteServiceProvider);
+      await writeService.deleteEvent(widget.eventId);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('일정이 삭제되었습니다'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _handleBackNavigation(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('일정 삭제 실패: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   void _openNavigation(String location) {
