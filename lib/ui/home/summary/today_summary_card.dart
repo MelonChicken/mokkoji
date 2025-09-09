@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../../data/models/today_summary_data.dart';
 import '../../../theme/tokens.dart';
 import '../../../widgets/source_chip.dart';
+import '../../../core/time/app_time.dart';
 
 /// 오버플로우 방지가 적용된 오늘 요약 카드
 class TodaySummaryCard extends StatelessWidget {
@@ -43,10 +44,11 @@ class TodaySummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTokens.radiusLg),
         boxShadow: !isDark ? AppTokens.e2 : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
           // 헤더 행
           Row(
             children: [
@@ -129,7 +131,7 @@ class TodaySummaryCard extends StatelessWidget {
                         ),
                         const SizedBox(height: AppTokens.s4),
                         Text(
-                          DateFormat('HH:mm').format(data.next!.startTime),
+                          DateFormat('HH:mm', 'ko_KR').format(AppTime.toKst(data.next!.startTime)),
                           style: textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: cs.onSurface,
@@ -181,36 +183,24 @@ class TodaySummaryCard extends StatelessWidget {
           
           const SizedBox(height: AppTokens.s16),
           
-          // 버튼 행 (화면 좁을 때 자동 줄바꿈)
+          // 버튼 행 (자동 줄바꿈)
           Wrap(
             spacing: AppTokens.s12,
             runSpacing: AppTokens.s8,
             children: [
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 2 - 6, // 반폭 - 여백
-                child: FilledButton.tonalIcon(
-                  onPressed: onViewDetails,
-                  icon: const Icon(Icons.list_alt),
-                  label: const Text('자세히'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: cs.surface,
-                    foregroundColor: cs.onSurface,
-                  ),
-                ),
+              FilledButton(
+                onPressed: onViewDetails,
+                child: const Text('자세히'),
               ),
-              SizedBox(
-                width: (MediaQuery.of(context).size.width - 64) / 2 - 6, // 반폭 - 여백
-                child: OutlinedButton.icon(
-                  onPressed: onJumpToNow,
-                  icon: const Icon(Icons.schedule),
-                  label: const Text('지금으로'),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                      color: isDark ? cs.onSurface : cs.onPrimaryContainer,
-                    ),
-                    foregroundColor: isDark ? cs.onSurface : cs.onPrimaryContainer,
+              OutlinedButton(
+                onPressed: onJumpToNow,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: isDark ? cs.onSurface : cs.onPrimaryContainer,
                   ),
+                  foregroundColor: isDark ? cs.onSurface : cs.onPrimaryContainer,
                 ),
+                child: const Text('지금으로'),
               ),
             ],
           ),
@@ -219,7 +209,7 @@ class TodaySummaryCard extends StatelessWidget {
           
           // 동기화 정보
           Text(
-            '마지막 동기화: ${DateFormat('HH:mm').format(data.lastSyncAt)}',
+            '마지막 동기화: ${DateFormat('HH:mm', 'ko_KR').format(AppTime.toKst(data.lastSyncAt))}',
             style: textTheme.labelSmall?.copyWith(
               color: (isDark ? cs.onSurface : cs.onPrimaryContainer).withValues(alpha: 0.7),
             ),
@@ -227,6 +217,7 @@ class TodaySummaryCard extends StatelessWidget {
             maxLines: 1,
           ),
         ],
+        ),
       ),
     );
   }
