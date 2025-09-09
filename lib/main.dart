@@ -12,8 +12,8 @@ import 'core/time/app_time.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize KST timezone data
-  await AppTime.ensureInitialized();
+  // Initialize KST timezone data - REQUIRED for strict UTC/KST contract
+  await AppTime.init();
   
   // Initialize database with seed data
   await eventRepository.initialize();

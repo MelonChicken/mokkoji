@@ -56,15 +56,21 @@ class OccurrenceIndexer {
   }
   
   /// Expand RRULE occurrences for an event within a date range
+  /// TIMEZONE CONTRACT: Input windowStartKst/windowEndKst are KST boundaries
   List<EventOccurrence> expandOccurrences(
     EventEntity event,
     DateTime windowStartKst,
     DateTime windowEndKst,
   ) {
+    // Parse DB times (should be UTC) and convert to KST for comparison
     final startUtc = DateTime.parse(event.startDt);
     final endUtc = event.endDt != null 
         ? DateTime.parse(event.endDt!)
         : startUtc.add(const Duration(hours: 1));
+    
+    // ENFORCE: DB times must be UTC, convert to KST for window checking
+    assert(startUtc.isUtc, 'Event startDt must be stored as UTC in DB');
+    assert(endUtc.isUtc, 'Event endDt must be stored as UTC in DB');
     
     final startKst = AppTime.toKst(startUtc);
     final endKst = AppTime.toKst(endUtc);
@@ -119,10 +125,10 @@ class EventOccurrence {
     this.platformColor,
   });
   
-  /// KST 기준 시작 시각
+  /// KST 기준 시작 시각 (DB UTC → KST 변환)
   DateTime get startKst => AppTime.toKst(startTime);
   
-  /// KST 기준 종료 시각
+  /// KST 기준 종료 시각 (DB UTC → KST 변환) 
   DateTime get endKst => AppTime.toKst(endTime);
   
   /// 최소 지속시간 적용 (0분 이벤트 보정)

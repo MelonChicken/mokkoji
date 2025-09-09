@@ -345,7 +345,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 )
               else
                 Text(
-                  '${DateFormat('HH:mm').format(startKst)} - ${DateFormat('HH:mm').format(endKst)}',
+                  AppTime.fmtRange(AppTime.toKst(startUtc), AppTime.toKst(endUtc)),
                   style: textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -519,7 +519,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final startTime = DateTime.fromMillisecondsSinceEpoch(event.startUtc * 1000);
     final startKst = startTime.add(const Duration(hours: 9));
     
-    final time = event.allDay ? '종일' : DateFormat('HH:mm').format(startKst);
+    final time = event.allDay ? '종일' : AppTime.fmtHm(AppTime.toKst(startTime));
     final place = event.location;
     
     if (place?.isNotEmpty == true) {

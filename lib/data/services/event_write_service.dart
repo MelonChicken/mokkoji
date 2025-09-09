@@ -8,11 +8,12 @@ import 'event_change_bus.dart';
 import 'occurrence_indexer.dart';
 
 /// Draft for creating new events
+/// TIMEZONE CONTRACT: startTime/endTime must be UTC for DB storage
 class EventDraft {
   final String title;
   final String? description;
-  final DateTime startTime; // UTC
-  final DateTime? endTime; // UTC
+  final DateTime startTime; // Must be UTC
+  final DateTime? endTime; // Must be UTC
   final bool allDay;
   final String? location;
   final String sourcePlatform;
@@ -31,12 +32,13 @@ class EventDraft {
 }
 
 /// Patch for updating existing events
+/// TIMEZONE CONTRACT: startTime/endTime must be UTC for DB storage
 class EventPatch {
   final String id;
   final String? title;
   final String? description;
-  final DateTime? startTime; // UTC
-  final DateTime? endTime; // UTC
+  final DateTime? startTime; // Must be UTC
+  final DateTime? endTime; // Must be UTC
   final bool? allDay;
   final String? location;
   final String? sourcePlatform;
@@ -70,12 +72,17 @@ class EventWriteService {
       _indexer = OccurrenceIndexer.instance;
 
   /// Add new event
+  /// TIMEZONE CONTRACT: draft.startTime/endTime must be UTC
   Future<void> addEvent(EventDraft draft) async {
-    final now = DateTime.now();
+    // ENFORCE: Draft times must be UTC for DB storage
+    assert(draft.startTime.isUtc, 'EventDraft.startTime must be UTC');
+    assert(draft.endTime?.isUtc ?? true, 'EventDraft.endTime must be UTC');
+    
+    final now = DateTime.now().toUtc(); // Ensure UTC for metadata
     final eventId = const Uuid().v4();
     
     if (kDebugMode) {
-      debugPrint('📝 Adding event: ${draft.title} at ${draft.startTime}');
+      debugPrint('📝 Adding event: ${draft.title} at ${draft.startTime} UTC');
     }
     
     final event = EventEntity(
@@ -105,9 +112,14 @@ class EventWriteService {
     }
   }
   
-  /// Update existing event
+  /// Update existing event  
+  /// TIMEZONE CONTRACT: patch.startTime/endTime must be UTC
   Future<void> updateEvent(EventPatch patch) async {
-    final now = DateTime.now();
+    // ENFORCE: Patch times must be UTC for DB storage
+    assert(patch.startTime?.isUtc ?? true, 'EventPatch.startTime must be UTC');
+    assert(patch.endTime?.isUtc ?? true, 'EventPatch.endTime must be UTC');
+    
+    final now = DateTime.now().toUtc(); // Ensure UTC for metadata
     
     if (kDebugMode) {
       debugPrint('📝 Updating event: ${patch.id}');

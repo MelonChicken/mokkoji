@@ -131,7 +131,7 @@ class TodaySummaryCard extends StatelessWidget {
                         ),
                         const SizedBox(height: AppTokens.s4),
                         Text(
-                          DateFormat('HH:mm', 'ko_KR').format(AppTime.toKst(data.next!.startTime)),
+                          AppTime.fmtHm(AppTime.toKst(data.next!.startTime)),
                           style: textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: cs.onSurface,
@@ -209,7 +209,7 @@ class TodaySummaryCard extends StatelessWidget {
           
           // 동기화 정보
           Text(
-            '마지막 동기화: ${DateFormat('HH:mm', 'ko_KR').format(AppTime.toKst(data.lastSyncAt))}',
+            '마지막 동기화: ${AppTime.fmtHm(AppTime.toKst(data.lastSyncAt))}',
             style: textTheme.labelSmall?.copyWith(
               color: (isDark ? cs.onSurface : cs.onPrimaryContainer).withValues(alpha: 0.7),
             ),

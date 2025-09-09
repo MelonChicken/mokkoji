@@ -22,9 +22,11 @@ class UnifiedEventRepository {
   }
 
   /// Load occurrences for a day synchronously (one-time)
+  /// TIMEZONE CONTRACT: Uses KST boundaries for day definition
   Future<List<EventOccurrence>> _loadOnceForDayKey(DateKey key) async {
-    final startK = key.toKstDateTime();
-    final endK = startK.add(const Duration(days: 1));
+    // KST day boundaries
+    final startK = AppTime.startOfDayKst(AppTime.nowKst().copyWith(year: key.y, month: key.m, day: key.d));
+    final endK = AppTime.endOfDayKst(startK);
     
     try {
       // Direct database query without watch
@@ -65,9 +67,11 @@ class UnifiedEventRepository {
 
   /// Single source of truth: immediate emission + watch stream combination
   /// All home timeline, combined view, and summary use this same stream
+  /// TIMEZONE CONTRACT: KST day boundaries
   Stream<List<EventOccurrence>> watchOccurrencesForDayKey(DateKey key) {
-    final startK = key.toKstDateTime();
-    final endK = startK.add(const Duration(days: 1));
+    // KST day boundaries
+    final startK = AppTime.startOfDayKst(AppTime.nowKst().copyWith(year: key.y, month: key.m, day: key.d));
+    final endK = AppTime.endOfDayKst(startK);
     
     if (kDebugMode) {
       debugPrint('▶ watch start $key');
@@ -153,15 +157,21 @@ class UnifiedEventRepository {
   }
   
   /// Expand RRULE occurrences for an event within a date range
+  /// TIMEZONE CONTRACT: windowStartKst/windowEndKst are KST boundaries
   List<EventOccurrence> _expandOccurrences(
     EventEntity event,
     DateTime windowStartKst,
     DateTime windowEndKst,
   ) {
+    // Parse DB times (must be UTC) and convert to KST for comparison
     final startUtc = DateTime.parse(event.startDt);
     final endUtc = event.endDt != null 
         ? DateTime.parse(event.endDt!)
         : startUtc.add(const Duration(hours: 1));
+    
+    // ENFORCE: DB times must be UTC, convert to KST for window checking
+    assert(startUtc.isUtc, 'Event startDt must be stored as UTC in DB');
+    assert(endUtc.isUtc, 'Event endDt must be stored as UTC in DB');
     
     final startKst = AppTime.toKst(startUtc);
     final endKst = AppTime.toKst(endUtc);

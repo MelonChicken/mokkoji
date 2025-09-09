@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../data/repositories/event_repository.dart';
 import '../../data/local/rrule_expander.dart';
+import '../../core/time/app_time.dart';
 import '../widgets/sync_banner.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -105,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final textTheme = theme.textTheme;
 
     final firstEventTime = events.isNotEmpty 
-        ? DateFormat('HH:mm').format(events.first.startTime)
+        ? AppTime.fmtHm(AppTime.toKst(events.first.startTime))
         : '예정된 일정 없음';
     
     final eventCount = events.length;

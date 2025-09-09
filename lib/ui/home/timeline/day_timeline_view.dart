@@ -48,9 +48,9 @@ class TimelineEvent {
   }
 
   int get startMinuteFromMidnight {
-    // KST 기준으로 변환 후 자정부터의 분 계산
+    // KST 기준으로 변환 후 자정부터의 분 계산 (타임라인 배치용)
     final kstTime = AppTime.toKst(startTime);
-    return kstTime.hour * 60 + kstTime.minute;
+    return AppTime.minutesFromMidnightKst(kstTime);
   }
 }
 
@@ -154,9 +154,9 @@ class DayTimelineViewState extends State<DayTimelineView> {
         return false;
       }
       
-      // KST 기준으로 변환 후 분 계산
+      // KST 기준으로 변환 후 분 계산 (AppTime 유틸 사용)
       final kstTarget = AppTime.toKst(target);
-      final minuteFromStart = kstTarget.hour * 60 + kstTarget.minute;
+      final minuteFromStart = AppTime.minutesFromMidnightKst(kstTarget);
       final totalMinutes = 24 * 60;
       final pos = (minuteFromStart / totalMinutes) * _contentHeight;
       final viewport = _effectiveViewport;
@@ -182,7 +182,8 @@ class DayTimelineViewState extends State<DayTimelineView> {
 
   void jumpToNow() {
     final now = AppTime.nowKst();
-    if (AppTime.isSameDayKst(now, widget.date)) {
+    final widgetDateKst = AppTime.toKst(widget.date);
+    if (AppTime.isSameDayKst(now, widgetDateKst)) {
       jumpToInclude(now);
     }
   }
@@ -191,7 +192,9 @@ class DayTimelineViewState extends State<DayTimelineView> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final isToday = AppTime.isSameDayKst(AppTime.nowKst(), widget.date);
+    final now = AppTime.nowKst();
+    final widgetDateKst = AppTime.toKst(widget.date);
+    final isToday = AppTime.isSameDayKst(now, widgetDateKst);
     
     final timedEvents = widget.events.where((e) => !e.allDay).toList();
     final allDayEvents = widget.events.where((e) => e.allDay).toList();
@@ -371,7 +374,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
                 borderRadius: BorderRadius.circular(AppTokens.radiusSm),
               ),
               child: Text(
-                DateFormat('HH:mm', 'ko_KR').format(now),
+                AppTime.fmtHm(now),
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onError,
                   fontWeight: FontWeight.w700,
