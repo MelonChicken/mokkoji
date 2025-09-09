@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:timezone/timezone.dart' as tz;
 import '../app_database.dart';
 import '../../features/events/data/event_entity.dart';
 import '../../core/time/app_time.dart';
@@ -56,11 +57,11 @@ class OccurrenceIndexer {
   }
   
   /// Expand RRULE occurrences for an event within a date range
-  /// TIMEZONE CONTRACT: Input windowStartKst/windowEndKst are KST boundaries
+  /// TIMEZONE CONTRACT: Input windowStartKst/windowEndKst are tz.TZDateTime KST boundaries
   List<EventOccurrence> expandOccurrences(
     EventEntity event,
-    DateTime windowStartKst,
-    DateTime windowEndKst,
+    tz.TZDateTime windowStartKst,
+    tz.TZDateTime windowEndKst,
   ) {
     // Parse DB times (should be UTC) and convert to KST for comparison
     final startUtc = DateTime.parse(event.startDt);
@@ -126,10 +127,10 @@ class EventOccurrence {
   });
   
   /// KST 기준 시작 시각 (DB UTC → KST 변환)
-  DateTime get startKst => AppTime.toKst(startTime);
+  tz.TZDateTime get startKst => AppTime.toKst(startTime);
   
   /// KST 기준 종료 시각 (DB UTC → KST 변환) 
-  DateTime get endKst => AppTime.toKst(endTime);
+  tz.TZDateTime get endKst => AppTime.toKst(endTime);
   
   /// 최소 지속시간 적용 (0분 이벤트 보정)
   EventOccurrence withMinDuration(Duration minDuration) {

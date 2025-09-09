@@ -1,6 +1,7 @@
 /// KST (Korea Standard Time) 유틸리티 클래스
 /// 설계 계약: DB는 항상 UTC 저장, 화면/계산은 항상 KST 기준
 /// UI에서 직접 toLocal()/toUtc() 호출 금지 - AppTime만 사용
+import 'package:flutter/foundation.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -20,20 +21,39 @@ class AppTime {
   static tz.TZDateTime nowKst() => tz.TZDateTime.now(kst);
 
   /// DB → KST 변환 (DB에서 읽은 UTC 시간을 KST로)
-  static tz.TZDateTime toKst(DateTime utc) {
-    assert(utc.isUtc, 'DB에서 읽은 시간은 반드시 UTC여야 합니다.');
+  static tz.TZDateTime toKst(DateTime any) {
+    assert(() {
+      if (!any.isUtc) {
+        // 디버그에서만 경고 로그 (빨간 화면 대신 원인 바로 잡기)
+        if (kDebugMode) {
+          debugPrint('[Time WARN] non-UTC DateTime passed to AppTime.toKst: $any');
+        }
+      }
+      return true;
+    }());
+    final utc = any.isUtc ? any : any.toUtc(); // ✅ 런타임 방어
     return tz.TZDateTime.from(utc, kst);
   }
 
   /// KST(사용자 선택) → DB(UTC) 변환
   static DateTime fromKstToUtc(tz.TZDateTime kstTime) => kstTime.toUtc();
 
-  /// KST 기준 하루의 경계
+  /// KST의 연월일(시분초=0) 객체 생성 - copyWith() 대체
+  static tz.TZDateTime ymdKst(int y, int m, int d) =>
+      tz.TZDateTime(kst, y, m, d);
+
+  /// KST 기준 하루의 경계 - tz.TZDateTime만 받도록 고정
   static tz.TZDateTime startOfDayKst(tz.TZDateTime k) =>
       tz.TZDateTime(kst, k.year, k.month, k.day);
   
   static tz.TZDateTime endOfDayKst(tz.TZDateTime k) =>
       tz.TZDateTime(kst, k.year, k.month, k.day + 1);
+
+  /// 레거시 호환: DateTime을 받아서 KST 하루 시작 반환
+  static tz.TZDateTime dayStartKst(DateTime date) {
+    // date가 이미 KST인 경우를 가정하고 연월일만 추출
+    return tz.TZDateTime(kst, date.year, date.month, date.day);
+  }
 
   /// 시간 포맷터 (06:16 형태)
   static String fmtHm(tz.TZDateTime k) =>

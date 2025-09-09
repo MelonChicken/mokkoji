@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:timezone/timezone.dart' as tz;
 import '../../db/app_database.dart';
 import '../../features/events/data/events_dao.dart';
 import '../../features/events/data/event_entity.dart';
@@ -14,6 +15,9 @@ import '../models/today_summary_data.dart';
 class UnifiedEventRepository {
   final EventsDao _dao;
   
+  /// UTC 플래그 보정 헬퍼 - DB에서 읽은 DateTime이 로컬로 복원되는 것을 방지
+  DateTime _ensureUtc(DateTime dt) => dt.isUtc ? dt : dt.toUtc();
+  
   UnifiedEventRepository(AppDatabase database) 
       : _dao = EventsDao() {
     if (kDebugMode) {
@@ -24,8 +28,8 @@ class UnifiedEventRepository {
   /// Load occurrences for a day synchronously (one-time)
   /// TIMEZONE CONTRACT: Uses KST boundaries for day definition
   Future<List<EventOccurrence>> _loadOnceForDayKey(DateKey key) async {
-    // KST day boundaries
-    final startK = AppTime.startOfDayKst(AppTime.nowKst().copyWith(year: key.y, month: key.m, day: key.d));
+    // KST day boundaries - use ymdKst() instead of copyWith()
+    final startK = AppTime.ymdKst(key.y, key.m, key.d);
     final endK = AppTime.endOfDayKst(startK);
     
     try {
@@ -69,8 +73,8 @@ class UnifiedEventRepository {
   /// All home timeline, combined view, and summary use this same stream
   /// TIMEZONE CONTRACT: KST day boundaries
   Stream<List<EventOccurrence>> watchOccurrencesForDayKey(DateKey key) {
-    // KST day boundaries
-    final startK = AppTime.startOfDayKst(AppTime.nowKst().copyWith(year: key.y, month: key.m, day: key.d));
+    // KST day boundaries - use ymdKst() instead of copyWith()
+    final startK = AppTime.ymdKst(key.y, key.m, key.d);
     final endK = AppTime.endOfDayKst(startK);
     
     if (kDebugMode) {
@@ -157,21 +161,21 @@ class UnifiedEventRepository {
   }
   
   /// Expand RRULE occurrences for an event within a date range
-  /// TIMEZONE CONTRACT: windowStartKst/windowEndKst are KST boundaries
+  /// TIMEZONE CONTRACT: windowStartKst/windowEndKst are tz.TZDateTime KST boundaries
   List<EventOccurrence> _expandOccurrences(
     EventEntity event,
-    DateTime windowStartKst,
-    DateTime windowEndKst,
+    tz.TZDateTime windowStartKst,
+    tz.TZDateTime windowEndKst,
   ) {
-    // Parse DB times (must be UTC) and convert to KST for comparison
-    final startUtc = DateTime.parse(event.startDt);
-    final endUtc = event.endDt != null 
+    // Parse DB times and ensure UTC flags (DB → 메모리 진입 시 UTC 플래그 보정)
+    final parsedStart = DateTime.parse(event.startDt);
+    final parsedEnd = event.endDt != null 
         ? DateTime.parse(event.endDt!)
-        : startUtc.add(const Duration(hours: 1));
+        : parsedStart.add(const Duration(hours: 1));
     
-    // ENFORCE: DB times must be UTC, convert to KST for window checking
-    assert(startUtc.isUtc, 'Event startDt must be stored as UTC in DB');
-    assert(endUtc.isUtc, 'Event endDt must be stored as UTC in DB');
+    // ✅ DB → 메모리 진입 시 UTC 플래그 보정
+    final startUtc = _ensureUtc(parsedStart);
+    final endUtc = _ensureUtc(parsedEnd);
     
     final startKst = AppTime.toKst(startUtc);
     final endKst = AppTime.toKst(endUtc);

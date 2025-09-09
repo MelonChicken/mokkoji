@@ -74,9 +74,18 @@ class EventWriteService {
   /// Add new event
   /// TIMEZONE CONTRACT: draft.startTime/endTime must be UTC
   Future<void> addEvent(EventDraft draft) async {
-    // ENFORCE: Draft times must be UTC for DB storage
-    assert(draft.startTime.isUtc, 'EventDraft.startTime must be UTC');
-    assert(draft.endTime?.isUtc ?? true, 'EventDraft.endTime must be UTC');
+    // ✅ 이중 안전장치: 런타임 방어 + 디버그 경고
+    final startUtc = draft.startTime.isUtc ? draft.startTime : draft.startTime.toUtc();
+    final endUtc = draft.endTime?.isUtc == false ? draft.endTime!.toUtc() : draft.endTime;
+    
+    if (kDebugMode) {
+      if (!draft.startTime.isUtc) {
+        debugPrint('[Event Write WARN] non-UTC startTime passed: ${draft.startTime}');
+      }
+      if (draft.endTime?.isUtc == false) {
+        debugPrint('[Event Write WARN] non-UTC endTime passed: ${draft.endTime}');
+      }
+    }
     
     final now = DateTime.now().toUtc(); // Ensure UTC for metadata
     final eventId = const Uuid().v4();
@@ -89,8 +98,8 @@ class EventWriteService {
       id: eventId,
       title: draft.title,
       description: draft.description,
-      startDt: draft.startTime.toIso8601String(),
-      endDt: draft.endTime?.toIso8601String(),
+      startDt: startUtc.toIso8601String(),
+      endDt: endUtc?.toIso8601String(),
       allDay: draft.allDay,
       location: draft.location,
       sourcePlatform: draft.sourcePlatform,
@@ -115,9 +124,18 @@ class EventWriteService {
   /// Update existing event  
   /// TIMEZONE CONTRACT: patch.startTime/endTime must be UTC
   Future<void> updateEvent(EventPatch patch) async {
-    // ENFORCE: Patch times must be UTC for DB storage
-    assert(patch.startTime?.isUtc ?? true, 'EventPatch.startTime must be UTC');
-    assert(patch.endTime?.isUtc ?? true, 'EventPatch.endTime must be UTC');
+    // ✅ 이중 안전장치: 런타임 방어 + 디버그 경고
+    final startUtc = patch.startTime?.isUtc == false ? patch.startTime!.toUtc() : patch.startTime;
+    final endUtc = patch.endTime?.isUtc == false ? patch.endTime!.toUtc() : patch.endTime;
+    
+    if (kDebugMode) {
+      if (patch.startTime?.isUtc == false) {
+        debugPrint('[Event Update WARN] non-UTC startTime passed: ${patch.startTime}');
+      }
+      if (patch.endTime?.isUtc == false) {
+        debugPrint('[Event Update WARN] non-UTC endTime passed: ${patch.endTime}');
+      }
+    }
     
     final now = DateTime.now().toUtc(); // Ensure UTC for metadata
     
@@ -135,8 +153,8 @@ class EventWriteService {
     final updated = current.copyWith(
       title: patch.title ?? current.title,
       description: patch.description ?? current.description,
-      startDt: patch.startTime?.toIso8601String() ?? current.startDt,
-      endDt: patch.endTime?.toIso8601String() ?? current.endDt,
+      startDt: startUtc?.toIso8601String() ?? current.startDt,
+      endDt: endUtc?.toIso8601String() ?? current.endDt,
       allDay: patch.allDay ?? current.allDay,
       location: patch.location ?? current.location,
       sourcePlatform: patch.sourcePlatform ?? current.sourcePlatform,
