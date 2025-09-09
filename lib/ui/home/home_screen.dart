@@ -62,14 +62,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return (base * scale).clamp(120.0, 280.0);
   }
 
+  // 통일된 reservedBottom 계산 (extendBody: true 환경)
+  double _computeReservedBottom(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
+    return systemBottom + _navBarH + _fabCardH + 16.0;   // 실측 기반 + 여백
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    
-    // 하단 예약: 시스템 제스처 + 실측 기반
-    final mq = MediaQuery.of(context);
-    final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
-    final reservedBottom = systemBottom + _navBarH + _fabCardH + 12; // 실측 기반
 
     return Scaffold(
       extendBody: true, // 유지 가능
@@ -95,6 +97,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
       body: SafeArea(
+        bottom: false, // extendBody: true이므로 하단 중복 패딩 방지
         child: Stack(
           children: [
             Consumer(
@@ -120,10 +123,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // 상단 요약 카드 높이(이미 계산한 headerHeight 사용)
                 final double reservedTop = headerHeight + 8; // 카드와 타임라인 사이 간격 포함
                 
-                // 하단 예약: 시스템 제스처 + 실측 기반
-                final mq = MediaQuery.of(context);
-                final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
-                final reservedBottom = systemBottom + _navBarH + _fabCardH + 12; // 실측 기반
+                // 통일된 하단 예약 영역 계산
+                final reservedBottom = _computeReservedBottom(context);
             
                 return CustomScrollView(
                   slivers: [

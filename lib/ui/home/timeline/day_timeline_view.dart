@@ -80,10 +80,13 @@ class DayTimelineView extends StatefulWidget {
 
 class DayTimelineViewState extends State<DayTimelineView> {
   late ScrollController _scrollController;
-  static const double _hourHeight = 80.0;
+  static const double kHourRowHeight = 64.0; // 시간당 행 높이 통일
   static const double _timeColumnWidth = 60.0;
   DateTime? _pendingTarget;
   int _retry = 0;
+  
+  // 타임라인 콘텐츠 총 높이 (0:00-24:00, 24시간)
+  double get _contentHeight => 24 * kHourRowHeight;
   
   // 뷰포트에서 실사용 가능한 높이(상/하단 예약 영역 제외)
   double get _effectiveViewport {
@@ -92,6 +95,9 @@ class DayTimelineViewState extends State<DayTimelineView> {
     final eff = raw - widget.reservedTop - widget.reservedBottom;
     return eff.clamp(0, raw);
   }
+  
+  // 하단 스페이서(trailing spacer) 높이 계산
+  double get _trailingSpacer => widget.reservedBottom + 32.0; // 추가 여백
 
   @override
   void initState() {
@@ -150,18 +156,14 @@ class DayTimelineViewState extends State<DayTimelineView> {
       
       // KST 기준으로 변환 후 분 계산
       final kstTarget = AppTime.toKst(target);
-      final minutes = kstTarget.hour * 60 + kstTarget.minute;
-      final pixelsPerMinute = _hourHeight / 60.0;
-      final contentOffset = minutes * pixelsPerMinute;
+      final minuteFromStart = kstTarget.hour * 60 + kstTarget.minute;
+      final totalMinutes = 24 * 60;
+      final pos = (minuteFromStart / totalMinutes) * _contentHeight;
+      final viewport = _effectiveViewport;
+      final desired = pos - (anchor * viewport);
       
-      // 상단은 reservedTop만큼, 하단은 reservedBottom만큼 비워둠
-      final effVp = _effectiveViewport;
-      final anchorPx = widget.reservedTop + (effVp * anchor);
-      
-      final targetOffset = (contentOffset - anchorPx).clamp(
-        0.0, 
-        _scrollController.position.maxScrollExtent,
-      );
+      final max = (_contentHeight + _trailingSpacer) - viewport;
+      final targetOffset = desired.clamp(0.0, max < 0 ? 0.0 : max);
       
       if (animate) {
         _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
@@ -239,9 +241,9 @@ class DayTimelineViewState extends State<DayTimelineView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 24시간 그리드(고정 높이)
+                // 24시간 그리드(0:00-24:00, 25개 격자선 포함)
                 SizedBox(
-                  height: 24 * _hourHeight,
+                  height: _contentHeight,
                   child: Stack(
                     children: [
                       _buildTimeGrid(context),
@@ -250,8 +252,8 @@ class DayTimelineViewState extends State<DayTimelineView> {
                     ],
                   ),
                 ),
-                // 하단에 "실제 빈 공간"을 추가해 바/카드 뒤에 안 가리게
-                SizedBox(height: widget.reservedBottom),
+                // 하단 트레일링 스페이서 - UI 요소에 가려지지 않도록
+                SizedBox(height: _trailingSpacer),
               ],
             ),
           ),
@@ -304,10 +306,10 @@ class DayTimelineViewState extends State<DayTimelineView> {
         SizedBox(
           width: _timeColumnWidth,
           child: Column(
-            children: List.generate(24, (hour) {
+            children: List.generate(25, (hour) { // 0시~24시 (25개)
               return SizedBox(
-                height: _hourHeight,
-                child: Align(
+                height: hour == 24 ? 0 : kHourRowHeight, // 24:00 라인은 높이 0
+                child: hour == 24 ? const SizedBox.shrink() : Align(
                   alignment: Alignment.topCenter,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -330,33 +332,10 @@ class DayTimelineViewState extends State<DayTimelineView> {
         Expanded(
           child: Stack(
             children: [
-              Column(
-                children: List.generate(24, (hour) {
-                  return Container(
-                    height: _hourHeight,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(
-                          color: cs.outlineVariant,
-                          width: hour == 0 ? 1.0 : 0.5,
-                        ),
-                      ),
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          top: _hourHeight / 2,
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            height: 0.5,
-                            color: cs.outlineVariant.withOpacity(0.3),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
+              // 사용자 정의 페인터로 0:00-24:00 그리드 라인 그리기
+              CustomPaint(
+                size: Size(double.infinity, _contentHeight),
+                painter: _TimeGridPainter(cs.outlineVariant),
               ),
             ],
           ),
@@ -369,7 +348,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
     final cs = Theme.of(context).colorScheme;
     final now = AppTime.nowKst();
     final minutesFromMidnight = AppTime.minutesFromMidnightKst(now);
-    final pixelsPerMinute = _hourHeight / 60.0;
+    final pixelsPerMinute = kHourRowHeight / 60.0;
     final topPosition = minutesFromMidnight * pixelsPerMinute;
 
     return Positioned(
@@ -471,7 +450,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
   List<Widget> _buildEventGroup(BuildContext context, List<TimelineEvent> group) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final pixelsPerMinute = _hourHeight / 60.0;
+    final pixelsPerMinute = kHourRowHeight / 60.0;
     
     return group.asMap().entries.map((entry) {
       final index = entry.key;
@@ -585,4 +564,51 @@ class DayTimelineViewState extends State<DayTimelineView> {
         return SourceType.google;
     }
   }
+}
+
+/// CustomPainter for drawing time grid lines from 0:00 to 24:00 (25 lines total)
+class _TimeGridPainter extends CustomPainter {
+  final Color lineColor;
+  
+  const _TimeGridPainter(this.lineColor);
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 0.5;
+    
+    final thickPaint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 1.0;
+    
+    // Draw 25 horizontal lines (0:00, 1:00, 2:00, ..., 24:00)
+    for (int h = 0; h <= 24; h++) {
+      final y = h * DayTimelineViewState.kHourRowHeight;
+      final usePaint = (h == 0 || h == 24) ? thickPaint : paint;
+      
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        usePaint,
+      );
+      
+      // Draw 30-minute half-lines (except for the last hour)
+      if (h < 24) {
+        final halfY = y + (DayTimelineViewState.kHourRowHeight / 2);
+        final halfPaint = Paint()
+          ..color = lineColor.withOpacity(0.3)
+          ..strokeWidth = 0.5;
+        
+        canvas.drawLine(
+          Offset(0, halfY),
+          Offset(size.width, halfY),
+          halfPaint,
+        );
+      }
+    }
+  }
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
