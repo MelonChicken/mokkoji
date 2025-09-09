@@ -22,6 +22,22 @@ class AppTime {
     return tz.TZDateTime.from(dateTime, _kst ?? tz.local);
   }
   
+  /// KST에서 UTC로 변환
+  static DateTime fromKstToUtc(DateTime kstDateTime) {
+    final tzDateTime = tz.TZDateTime.from(kstDateTime, _kst ?? tz.local);
+    return tzDateTime.toUtc();
+  }
+  
+  /// KST 기준 하루의 시작 시각 (00:00:00)
+  static DateTime dayStartKst(DateTime kstDate) {
+    return DateTime(kstDate.year, kstDate.month, kstDate.day);
+  }
+  
+  /// KST 기준 하루의 종료 시각 (다음날 00:00:00, exclusive)
+  static DateTime dayEndExclusiveKst(DateTime kstDate) {
+    return dayStartKst(kstDate).add(const Duration(days: 1));
+  }
+  
   /// KST 기준 자정부터의 분 수 계산
   static int minutesFromMidnightKst(DateTime dateTime) {
     final kstTime = toKst(dateTime);
