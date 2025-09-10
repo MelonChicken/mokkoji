@@ -66,7 +66,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   double _computeReservedBottom(BuildContext context) {
     final mq = MediaQuery.of(context);
     final systemBottom = mq.padding.bottom;              // 제스처/홈 인디케이터
-    return systemBottom + _navBarH + _fabCardH + 16.0;   // 실측 기반 + 여백
+    
+    // 기본적인 bottomNavigationBar 높이 (대략 56-80dp) + FAB 높이 (대략 56dp)
+    // 실제 위젯이 있으면 MeasureSize로 측정, 없으면 기본값 사용
+    final estimatedNavBarH = _navBarH > 0 ? _navBarH : 72.0;  // BottomAppBar 기본 높이
+    final estimatedFabH = _fabCardH > 0 ? _fabCardH : 56.0;   // FAB 기본 높이
+    
+    return systemBottom + estimatedNavBarH + estimatedFabH + 16.0;   // 실측 기반 + 여백
   }
 
   @override

@@ -348,12 +348,31 @@ ThemeData lightTheme(BuildContext context) {
 
 /// 다크 테마 생성
 ThemeData darkTheme(BuildContext context) {
-  final colorScheme = _createOptimizedColorScheme(
+  // Enhanced dark ColorScheme with proper contrast ratios
+  final colorScheme = ColorScheme(
     brightness: Brightness.dark,
     primary: AppTokens.primary300,
+    onPrimary: AppTokens.neutral0,
     secondary: AppTokens.mint400,
-    surface: const Color(0xFF1F2937),
-    background: const Color(0xFF111827),
+    onSecondary: AppTokens.neutral0,
+    surface: AppTokens.neutral950,                // Page/screen background (darkest)
+    onSurface: AppTokens.neutral50,               // Body/label text (high contrast)
+    surfaceContainerHighest: AppTokens.neutral900,// Modal/card background
+    surfaceContainerHigh: AppTokens.neutral875,   // Input field background
+    surfaceContainerLow: AppTokens.neutral800,    // Alternative container
+    surfaceVariant: AppTokens.neutral750,         // Group background/secondary
+    onSurfaceVariant: AppTokens.neutral300,       // Secondary text
+    outline: AppTokens.neutral700,                // Dividers/borders
+    outlineVariant: AppTokens.neutral650,         // Secondary borders
+    error: AppTokens.error400,
+    onError: AppTokens.neutral0,
+    tertiary: AppTokens.mint400,
+    onTertiary: AppTokens.neutral0,
+    background: AppTokens.neutral950,
+    onBackground: AppTokens.neutral50,
+    inverseSurface: AppTokens.neutral100,
+    onInverseSurface: AppTokens.neutral900,
+    inversePrimary: AppTokens.primary500,
   );
   
   final textTheme = _createTextTheme(
@@ -362,23 +381,102 @@ ThemeData darkTheme(BuildContext context) {
   );
 
   return ThemeData(
-    colorScheme: colorScheme,
-    textTheme: textTheme,
-    scaffoldBackgroundColor: const Color(0xFF111827),
     useMaterial3: true,
+    colorScheme: colorScheme,
+    textTheme: textTheme.apply(
+      bodyColor: colorScheme.onSurface,
+      displayColor: colorScheme.onSurface,
+    ),
+    scaffoldBackgroundColor: colorScheme.surface,
     
-    // 컴포넌트 테마
+    // Enhanced BottomSheet theme for better visibility
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: colorScheme.surfaceContainerHighest,
+      surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        side: BorderSide(color: colorScheme.outline.withOpacity(0.6)),
+      ),
+      elevation: 3,
+      dragHandleColor: colorScheme.outlineVariant,
+    ),
+    
+    // Card/container (block separation)
+    cardTheme: CardTheme(
+      color: colorScheme.surfaceContainerHigh,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colorScheme.outline.withOpacity(0.6)),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    dividerTheme: DividerThemeData(
+      color: colorScheme.outline.withOpacity(0.5),
+      thickness: 1,
+      space: 0,
+    ),
+    
+    // Input field accessibility (labels/hints/icons/borders)
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHigh,        // Dark field background
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      labelStyle: TextStyle(color: colorScheme.onSurface),                  // "제목*", "날짜*" etc
+      floatingLabelStyle: TextStyle(color: colorScheme.onSurface),
+      hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.62)),  // Hints 62% opacity
+      prefixIconColor: colorScheme.onSurface.withOpacity(0.80),
+      suffixIconColor: colorScheme.onSurface.withOpacity(0.80),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.6),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.error, width: 1.6),
+      ),
+    ),
+    
+    // Buttons/chips (bottom +, calendar integration chips)
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colorScheme.onSurface,
+        side: BorderSide(color: colorScheme.outline),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: colorScheme.surfaceContainerHigh,
+      selectedColor: colorScheme.primary.withOpacity(0.15),
+      labelStyle: TextStyle(color: colorScheme.onSurface),
+      shape: StadiumBorder(side: BorderSide(color: colorScheme.outline)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    ),
+    
+    // Other component themes
     appBarTheme: _ComponentThemes.appBarTheme(colorScheme),
-    bottomSheetTheme: _ComponentThemes.bottomSheetTheme(colorScheme),
-    cardTheme: _ComponentThemes.cardTheme(colorScheme, true),
     elevatedButtonTheme: _ComponentThemes.elevatedButtonTheme(colorScheme),
-    filledButtonTheme: _ComponentThemes.filledButtonTheme(colorScheme),
     textButtonTheme: _ComponentThemes.textButtonTheme(colorScheme),
-    inputDecorationTheme: _ComponentThemes.inputDecorationTheme(colorScheme),
-    chipTheme: _ComponentThemes.chipTheme(colorScheme),
     dialogTheme: _ComponentThemes.dialogTheme(colorScheme),
     snackBarTheme: _ComponentThemes.snackBarTheme(colorScheme),
-    dividerTheme: _ComponentThemes.dividerTheme(colorScheme),
     iconTheme: _ComponentThemes.iconTheme(colorScheme),
     primaryIconTheme: IconThemeData(color: colorScheme.onPrimary),
     

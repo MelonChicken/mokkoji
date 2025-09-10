@@ -14,15 +14,30 @@ class AppTokens {
   // Lilac (accent)
   static const lilac300 = Color(0xFF8B5CF6); // Darker lilac for accessibility
 
-  // Neutrals
+  // Neutrals - Full spectrum for dark mode support
   static const neutral0 = Color(0xFFFFFFFF);
+  static const neutral50 = Color(0xFFF9FAFB);
   static const neutral100 = Color(0xFFF3F4F6);
+  static const neutral200 = Color(0xFFE5E7EB);
+  static const neutral300 = Color(0xFFD1D5DB);
+  static const neutral400 = Color(0xFF9CA3AF);
+  static const neutral500 = Color(0xFF6B7280);
+  static const neutral600 = Color(0xFF4B5563);
+  static const neutral700 = Color(0xFF374151);
+  static const neutral750 = Color(0xFF2D3748); // Custom for surface variants
+  static const neutral800 = Color(0xFF1F2937);
+  static const neutral875 = Color(0xFF1A202C); // Custom for input fields in dark
   static const neutral900 = Color(0xFF111827);
+  static const neutral950 = Color(0xFF0C0F17); // Darkest for background
+  
+  // Dark mode specific tokens
+  static const neutral650 = Color(0xFF3F4651); // For outline variants
 
   // Semantic (WCAG AA compliant)
   static const success = Color(0xFF047857); // Emerald-700 (4.5:1 on white)
   static const warning = Color(0xFFB45309); // Amber-700 (4.5:1 on white) 
   static const error = Color(0xFFDC2626); // Red-600 (5.9:1 on white)
+  static const error400 = Color(0xFFF87171); // Red-400 for dark mode
 
   // Spacing (8pt scale + extras)
   static const s2 = 2.0;

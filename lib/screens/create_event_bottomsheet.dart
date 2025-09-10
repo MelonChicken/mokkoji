@@ -2,46 +2,49 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import '../theme/tokens.dart';
 import '../data/repositories/event_repository.dart';
 
 Future<void> showEventCreateSheet(BuildContext context, {VoidCallback? onEventCreated}) {
-  const topRadius = Radius.circular(24); // ← 원하는 곡률 (24~28dp 권장)
-
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: Colors.white, // 시트 바탕
-    clipBehavior: Clip.antiAlias,   // ✅ 라운드 모서리에 맞춰 내부까지 클립
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: topRadius), // ✅ 상단만 둥글게
+    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+    barrierColor: Colors.black.withOpacity(0.5),
+    clipBehavior: Clip.antiAlias,
+    shape: RoundedRectangleBorder(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.6)),
     ),
-    // (선택) Flutter 버전에 따라 지원되면 드래그 핸들 노출
-    // showDragHandle: true,
-    builder: (ctx) => _RoundedSheetFrame(
-      radius: topRadius,
-      child: EventCreateSheet(onEventCreated: onEventCreated), // ← 콜백 추가
-    ),
+    builder: (ctx) => EventCreateSheet(onEventCreated: onEventCreated),
   );
 }
 
-InputDecoration _inputDecoration(BuildContext context, {
-  String? hint,
-  Widget? suffixIcon,
-}) {
-  final colorScheme = Theme.of(context).colorScheme;
-  return InputDecoration(
-    hintText: hint,
-    filled: true,
-    fillColor: colorScheme.surfaceContainerHighest,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    ),
-    suffixIcon: suffixIcon,
-  );
+// Helper widget for labeled input fields
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  
+  const _LabeledField({required this.label, required this.child});
+  
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label, 
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
 }
 
 class EventCreateSheet extends StatefulWidget {
@@ -84,11 +87,15 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
+      padding: EdgeInsets.only(
+        left: 16, 
+        right: 16, 
+        top: 12,
+        bottom: bottomInset + 16,
+      ),
       child: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -106,122 +113,131 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
               ),
               
               // Header
-              Row(
-                children: [
-                  Text(
-                    '새 일정 만들기',
-                    style: textTheme.titleLarge,
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
+              Text('새 일정 만들기', style: textTheme.titleLarge),
               const SizedBox(height: 12),
 
               // 제목 (필수)
-              Text('제목 *', style: textTheme.labelLarge),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _titleController,
-                decoration: _inputDecoration(
-                  context,
-                  hint: '일정 제목을 입력하세요',
+              _LabeledField(
+                label: '제목 *',
+                child: TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    hintText: '일정 제목을 입력하세요',
+                    prefixIcon: Icon(Icons.title),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return '제목은 필수입니다';
+                    }
+                    return null;
+                  },
                 ),
-                onChanged: (_) => setState(() {}),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '제목은 필수입니다';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // 날짜 및 시간
               Row(
                 children: [
                   Expanded(
-                    child: _DateField(
+                    child: _LabeledField(
                       label: '날짜 *',
-                      value: _selectedDate,
-                      onTap: () async {
-                        final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: context,
-                          firstDate: DateTime(now.year - 1),
-                          lastDate: DateTime(now.year + 3),
-                          initialDate: _selectedDate ?? now,
-                        );
-                        if (picked != null) {
-                          setState(() => _selectedDate = picked);
-                        }
-                      },
+                      child: TextField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _selectedDate == null
+                              ? ''
+                              : DateFormat('yyyy-MM-dd').format(_selectedDate!),
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: '연도-월-일',
+                          prefixIcon: Icon(Icons.calendar_month),
+                        ),
+                        onTap: () async {
+                          final now = DateTime.now();
+                          final picked = await showDatePicker(
+                            context: context,
+                            firstDate: DateTime(now.year - 1),
+                            lastDate: DateTime(now.year + 3),
+                            initialDate: _selectedDate ?? now,
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedDate = picked);
+                          }
+                        },
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _TimeField(
+                    child: _LabeledField(
                       label: '시간 *',
-                      value: _selectedTime,
-                      onTap: () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime: _selectedTime ?? TimeOfDay.now(),
-                        );
-                        if (picked != null) {
-                          setState(() => _selectedTime = picked);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // 장소
-              Text('장소', style: textTheme.labelLarge),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _placeController,
-                decoration: _inputDecoration(
-                  context,
-                  hint: '장소를 입력하세요',
-                  suffixIcon: const Icon(Icons.place_outlined),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // 참여자
-              Text('참여자', style: textTheme.labelLarge),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _attendeeController,
-                      decoration: _inputDecoration(
-                        context,
-                        hint: '참여자 이름 또는 연락처',
+                      child: TextField(
+                        readOnly: true,
+                        controller: TextEditingController(
+                          text: _selectedTime == null ? '' : _formatTime(_selectedTime!),
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: '-- --:--',
+                          prefixIcon: Icon(Icons.access_time),
+                        ),
+                        onTap: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: _selectedTime ?? TimeOfDay.now(),
+                          );
+                          if (picked != null) {
+                            setState(() => _selectedTime = picked);
+                          }
+                        },
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonal(
-                    onPressed: () {
-                      final value = _attendeeController.text.trim();
-                      if (value.isNotEmpty) {
-                        setState(() {
-                          _attendees.add(value);
-                          _attendeeController.clear();
-                        });
-                      }
-                    },
-                    child: const Icon(Icons.add),
-                  ),
                 ],
+              ),
+              const SizedBox(height: 12),
+
+              // 장소
+              _LabeledField(
+                label: '장소',
+                child: TextField(
+                  controller: _placeController,
+                  decoration: const InputDecoration(
+                    hintText: '장소를 입력하세요',
+                    prefixIcon: Icon(Icons.place_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 참여자
+              _LabeledField(
+                label: '참여자',
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _attendeeController,
+                        decoration: const InputDecoration(
+                          hintText: '참여자 이름 또는 연락처'
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.tonal(
+                      onPressed: () {
+                        final value = _attendeeController.text.trim();
+                        if (value.isNotEmpty) {
+                          setState(() {
+                            _attendees.add(value);
+                            _attendeeController.clear();
+                          });
+                        }
+                      },
+                      child: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
               ),
               if (_attendees.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -238,34 +254,56 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                       .toList(),
                 ),
               ],
+
               const SizedBox(height: 16),
+              Divider(color: colorScheme.outline.withOpacity(0.5)), // Block boundary
+              const SizedBox(height: 12),
 
               // 캘린더 연동
-              Text('캘린더 연동', style: textTheme.labelLarge),
+              Text('캘린더 연동', style: textTheme.titleMedium),
               const SizedBox(height: 8),
               Wrap(
-                spacing: 12,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  _SourceChip(
-                    label: '카카오',
-                    color: const Color(0xFFFEE500),
-                    value: 'kakao',
-                    selectedSources: _selectedSources,
-                    onChanged: () => setState(() {}),
+                  FilterChip(
+                    label: const Text('카카오'),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSources.add('kakao');
+                        } else {
+                          _selectedSources.remove('kakao');
+                        }
+                      });
+                    },
+                    selected: _selectedSources.contains('kakao'),
                   ),
-                  _SourceChip(
-                    label: '네이버',
-                    color: const Color(0xFF03C75A),
-                    value: 'naver',
-                    selectedSources: _selectedSources,
-                    onChanged: () => setState(() {}),
+                  FilterChip(
+                    label: const Text('네이버'),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSources.add('naver');
+                        } else {
+                          _selectedSources.remove('naver');
+                        }
+                      });
+                    },
+                    selected: _selectedSources.contains('naver'),
                   ),
-                  _SourceChip(
-                    label: '구글',
-                    color: const Color(0xFF4285F4),
-                    value: 'google',
-                    selectedSources: _selectedSources,
-                    onChanged: () => setState(() {}),
+                  FilterChip(
+                    label: const Text('구글'),
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedSources.add('google');
+                        } else {
+                          _selectedSources.remove('google');
+                        }
+                      });
+                    },
+                    selected: _selectedSources.contains('google'),
                   ),
                 ],
               ),
@@ -354,177 +392,15 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
       ),
     );
   }
-}
 
-// Helper Widgets
-class _DateField extends StatelessWidget {
-  const _DateField({
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final String label;
-  final DateTime? value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: textTheme.labelLarge),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: onTap,
-          child: IgnorePointer(
-            child: TextField(
-              readOnly: true,
-              controller: TextEditingController(
-                text: value == null
-                    ? ''
-                    : DateFormat('yyyy-MM-dd').format(value!),
-              ),
-              decoration: _inputDecoration(
-                context,
-                hint: '연도-월-일',
-                suffixIcon: const Icon(Icons.event_outlined),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? '오전' : '오후';
+    return '$period $hour:$minute';
   }
 }
 
-class _TimeField extends StatelessWidget {
-  const _TimeField({
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  final String label;
-  final TimeOfDay? value;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    
-    String? displayText;
-    if (value != null) {
-      final hour = value!.hourOfPeriod == 0 ? 12 : value!.hourOfPeriod;
-      final minute = value!.minute.toString().padLeft(2, '0');
-      final period = value!.period == DayPeriod.am ? '오전' : '오후';
-      displayText = '$period $hour:$minute';
-    }
-    
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: textTheme.labelLarge),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: onTap,
-          child: IgnorePointer(
-            child: TextField(
-              readOnly: true,
-              controller: TextEditingController(text: displayText ?? ''),
-              decoration: _inputDecoration(
-                context,
-                hint: '-- --:--',
-                suffixIcon: const Icon(Icons.access_time),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SourceChip extends StatelessWidget {
-  const _SourceChip({
-    required this.label,
-    required this.color,
-    required this.value,
-    required this.selectedSources,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final Color color;
-  final Set<String> selectedSources;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = selectedSources.contains(value);
-    final colorScheme = Theme.of(context).colorScheme;
-    
-    return FilterChip(
-      selected: selected,
-      onSelected: (isSelected) {
-        if (isSelected) {
-          selectedSources.add(value);
-        } else {
-          selectedSources.remove(value);
-        }
-        onChanged();
-      },
-      label: Text(label),
-      showCheckmark: false,
-      labelStyle: TextStyle(
-        color: selected ? color : colorScheme.onSurface,
-      ),
-      backgroundColor: color.withOpacity(0.12),
-      selectedColor: color.withOpacity(0.24),
-      side: BorderSide(color: color.withOpacity(0.36)),
-    );
-  }
-}
-
-class _RoundedSheetFrame extends StatelessWidget {
-  const _RoundedSheetFrame({super.key, required this.child, required this.radius});
-  final Widget child;
-  final Radius radius;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      // ✅ 내부도 동일 shape + tint 제거로 완전 흰색 유지
-      color: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: radius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: child,
-    );
-  }
-}
-
-class _DragHandle extends StatelessWidget {
-  const _DragHandle({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        width: 36, height: 4,
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.outlineVariant,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    );
-  }
-}
 
 // Legacy class name for compatibility
 class CreateEventBottomSheet extends EventCreateSheet {

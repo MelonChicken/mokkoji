@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../features/events/data/event_entity.dart';
@@ -159,16 +160,21 @@ class DayTimelineViewState extends State<DayTimelineView> {
       final minuteFromStart = AppTime.minutesFromMidnightKst(kstTarget);
       final totalMinutes = 24 * 60;
       final pos = (minuteFromStart / totalMinutes) * _contentHeight;
-      final viewport = _effectiveViewport;
+      final viewport = _effectiveViewport; // 이미 reservedTop/Bottom 반영된 값
       final desired = pos - (anchor * viewport);
       
-      final max = (_contentHeight + _trailingSpacer) - viewport;
-      final targetOffset = desired.clamp(0.0, max < 0 ? 0.0 : max);
+      // 최대 스크롤 가능한 거리 계산 (트레일링 스페이서 포함)
+      final maxScrollExtent = (_contentHeight + _trailingSpacer) - viewport;
+      final clampedOffset = desired.clamp(0.0, maxScrollExtent < 0 ? 0.0 : maxScrollExtent);
       
       if (animate) {
-        _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scrollController.animateTo(
+          clampedOffset, 
+          duration: const Duration(milliseconds: 250), 
+          curve: Curves.easeOut
+        );
       } else {
-        _scrollController.jumpTo(targetOffset);
+        _scrollController.jumpTo(clampedOffset);
       }
       return true;
     };
@@ -256,7 +262,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
                   ),
                 ),
                 // 하단 트레일링 스페이서 - UI 요소에 가려지지 않도록
-                SizedBox(height: _trailingSpacer),
+                _buildTrailingSpacer(),
               ],
             ),
           ),
@@ -553,6 +559,35 @@ class DayTimelineViewState extends State<DayTimelineView> {
         ),
       );
     }).toList();
+  }
+
+  Widget _buildTrailingSpacer() {
+    return Container(
+      height: _trailingSpacer,
+      width: double.infinity,
+      decoration: kDebugMode 
+          ? BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              border: Border.all(
+                color: Colors.blue.withOpacity(0.3), 
+                width: 1.0,
+              ),
+            )
+          : null,
+      child: kDebugMode 
+          ? Center(
+              child: Text(
+                'Trailing Spacer\n${_trailingSpacer.toStringAsFixed(1)}px',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.blue.withOpacity(0.7),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            )
+          : null,
+    );
   }
 
   SourceType _getSourceType(String platform) {
