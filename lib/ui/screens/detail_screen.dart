@@ -324,7 +324,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                DateFormat('yyyy년 M월 d일 (E)', 'ko_KR').format(startKst),
+                KST.dayWithWeekday(startKst.millisecondsSinceEpoch),
                 style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 2),

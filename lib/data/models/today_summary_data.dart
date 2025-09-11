@@ -1,5 +1,6 @@
-import '../../../features/events/data/event_entity.dart';
-import '../../../core/time/app_time.dart';
+import 'package:timezone/timezone.dart' as tz;
+import '../../features/events/data/event_entity.dart';
+import '../../core/time/app_time.dart';
 
 class EventOccurrence {
   final String id;
@@ -44,10 +45,10 @@ class EventOccurrence {
   }
   
   /// KST 기준 시작 시각
-  DateTime get startKst => AppTime.toKst(startTime);
+  tz.TZDateTime get startKst => AppTime.toKst(startTime);
   
   /// KST 기준 종료 시각
-  DateTime get endKst => AppTime.toKst(endTime);
+  tz.TZDateTime get endKst => AppTime.toKst(endTime);
   
   /// 분 단위 지속시간 (최소 1분)
   int get durationMinutes {

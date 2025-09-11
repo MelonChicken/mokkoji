@@ -1,66 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
+import '../core/time/date_key.dart';
+import '../core/time/app_time.dart';
 import '../theme/tokens.dart';
 import '../widgets/event_card.dart';
 import '../widgets/source_chip.dart';
-import '../data/repositories/event_repository.dart';
-import '../features/events/data/event_entity.dart';
+import '../data/providers/unified_providers.dart';
+import '../data/models/today_summary_data.dart';
 import '../screens/create_event_bottomsheet.dart';
 
-class AgendaScreen extends StatefulWidget {
+class AgendaScreen extends ConsumerStatefulWidget {
   const AgendaScreen({super.key});
 
   @override
-  State<AgendaScreen> createState() => _AgendaScreenState();
+  ConsumerState<AgendaScreen> createState() => _AgendaScreenState();
 }
 
-class _AgendaScreenState extends State<AgendaScreen> {
+class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   DateTime _selectedDate = DateTime.now();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final Set<SourceType> _selectedPlatforms = {SourceType.kakao, SourceType.naver, SourceType.google};
-  List<EventEntity> _events = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadEvents();
-  }
-
-  Future<void> _loadEvents() async {
-    setState(() => _isLoading = true);
-    
-    try {
-      final startOfDay = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
-      
-      final events = await eventRepository.getEventsForRange(
-        startOfDay.toIso8601String(),
-        endOfDay.toIso8601String(),
-      );
-      
-      if (mounted) {
-        setState(() {
-          _events = events;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading events: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
     
     return Scaffold(
       body: NestedScrollView(
@@ -148,7 +112,7 @@ class _AgendaScreenState extends State<AgendaScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           showEventCreateSheet(context, onEventCreated: () {
-            _loadEvents(); // 일정 추가 후 새로고침
+            // unified provider가 자동으로 업데이트됨
           });
         },
         label: const Text('모으기'),
@@ -175,7 +139,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
               setState(() {
                 _selectedDate = _selectedDate.subtract(const Duration(days: 1));
               });
-              _loadEvents();
             },
           ),
           Expanded(
@@ -197,7 +160,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
               setState(() {
                 _selectedDate = _selectedDate.add(const Duration(days: 1));
               });
-              _loadEvents();
             },
           ),
         ],
@@ -246,54 +208,64 @@ class _AgendaScreenState extends State<AgendaScreen> {
   }
 
   Widget _buildEventList() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final filteredEvents = _getFilteredEvents();
+    // 선택된 날짜를 KST로 변환하여 DateKey 생성
+    final selectedDateKst = AppTime.toKst(_selectedDate);
+    final selectedKey = DateKey(selectedDateKst.year, selectedDateKst.month, selectedDateKst.day);
     
-    if (filteredEvents.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.event_busy,
-              size: 64,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: AppTokens.s16),
-            Text(
-              _searchQuery.isNotEmpty 
-                  ? '검색 결과가 없습니다'
-                  : '${_formatSelectedDate()}에 일정이 없습니다',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      itemCount: filteredEvents.length,
-      separatorBuilder: (context, index) => const SizedBox(height: AppTokens.s8),
-      itemBuilder: (context, index) {
-        final event = filteredEvents[index];
-        final startTime = DateTime.parse(event.startDt);
-        final timeStr = DateFormat('HH:mm').format(startTime);
+    // unified provider 사용
+    final occurrencesAsync = ref.watch(occurrencesForDayProvider(selectedKey));
+    
+    return occurrencesAsync.when(
+      data: (occurrences) {
+        final filteredOccurrences = _getFilteredOccurrences(occurrences);
         
-        return EventCard(
-          time: timeStr,
-          title: _highlightSearchText(event.title),
-          place: event.location ?? '장소 미정',
-          source: _getSourceFromPlatform(event.sourcePlatform),
-          onOpen: () => context.go('/detail/${event.id}'),
-          onNavigate: () => _openMap(event.location ?? ''),
-          onDelete: () => _deleteEvent(event.id),
+        if (filteredOccurrences.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.event_busy,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: AppTokens.s16),
+                Text(
+                  _searchQuery.isNotEmpty 
+                      ? '검색 결과가 없습니다'
+                      : '${_formatSelectedDate()}에 일정이 없습니다',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          itemCount: filteredOccurrences.length,
+          separatorBuilder: (context, index) => const SizedBox(height: AppTokens.s8),
+          itemBuilder: (context, index) {
+            final occurrence = filteredOccurrences[index];
+            final timeStr = AppTime.fmtHm(occurrence.startKst);
+            
+            return EventCard(
+              time: timeStr,
+              title: _highlightSearchText(occurrence.title),
+              place: occurrence.location ?? '장소 미정',
+              source: _getSourceFromPlatform(occurrence.sourcePlatform),
+              onOpen: () => context.go('/detail/${occurrence.id}'),
+              onNavigate: () => _openMap(occurrence.location ?? ''),
+              onDelete: () => _deleteOccurrence(occurrence.id),
+            );
+          },
         );
       },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Text('오류: $error', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ),
     );
   }
 
@@ -310,18 +282,18 @@ class _AgendaScreenState extends State<AgendaScreen> {
     }
   }
 
-  List<EventEntity> _getFilteredEvents() {
+  List<EventOccurrence> _getFilteredOccurrences(List<EventOccurrence> occurrences) {
     // 플랫폼 필터링
-    final platformFiltered = _events.where((event) {
-      final sourceType = _getSourceFromPlatform(event.sourcePlatform);
+    final platformFiltered = occurrences.where((occurrence) {
+      final sourceType = _getSourceFromPlatform(occurrence.sourcePlatform);
       return _selectedPlatforms.contains(sourceType);
     }).toList();
 
     // 검색 필터링
     if (_searchQuery.isNotEmpty) {
-      return platformFiltered.where((event) {
-        final title = event.title.toLowerCase();
-        final location = (event.location ?? '').toLowerCase();
+      return platformFiltered.where((occurrence) {
+        final title = occurrence.title.toLowerCase();
+        final location = (occurrence.location ?? '').toLowerCase();
         final query = _searchQuery.toLowerCase();
         return title.contains(query) || location.contains(query);
       }).toList();
@@ -378,7 +350,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
       setState(() {
         _selectedDate = date;
       });
-      _loadEvents();
     }
   }
 
@@ -394,9 +365,10 @@ class _AgendaScreenState extends State<AgendaScreen> {
     );
   }
 
-  Future<void> _deleteEvent(String eventId) async {
+  Future<void> _deleteOccurrence(String occurrenceId) async {
     try {
-      await eventRepository.deleteEvent(eventId);
+      final writeService = ref.read(eventWriteServiceProvider);
+      await writeService.deleteEvent(occurrenceId);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -405,9 +377,6 @@ class _AgendaScreenState extends State<AgendaScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        
-        // 삭제 후 이벤트 목록 새로고침
-        _loadEvents();
       }
     } catch (e) {
       if (mounted) {

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\Users\\osca0\\Github\\mokkoji\\lib\\features\\events\\data/**)",
+      "Read(/C:\\Users\\osca0\\Github\\mokkoji/**)",
+      "Read(/C:\\Users\\osca0\\Github\\mokkoji\\lib\\features\\events\\data/**)",
+      "Read(/C:\\Users\\osca0\\Github\\mokkoji\\lib\\features\\events\\data/**)",
+      "Read(/C:\\Users\\osca0\\Github\\mokkoji\\lib\\features\\events\\data/**)",
+      "Bash(flutter test:*)",
+      "Bash(dart run:*)",
+      "Bash(flutter run:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter build:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

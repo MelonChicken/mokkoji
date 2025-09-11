@@ -4,7 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
+import '../../core/time/kst.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers/unified_providers.dart';
 import '../../core/time/date_key.dart';
@@ -319,7 +319,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  DateFormat('M월 d일 (E)', 'ko_KR').format(day),
+                  '${day.month}월 ${day.day}일 (${['', '월', '화', '수', '목', '금', '토', '일'][day.weekday]})',
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -346,8 +346,9 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
   }
 
   Widget _buildEventCard(EventOccurrence event, {bool compact = false}) {
-    final timeFormat = event.isAllDay ? 'MMM d일 (종일)' : 'HH:mm';
-    final timeText = DateFormat(timeFormat).format(event.startTime);
+    final timeText = event.isAllDay 
+        ? '${event.startTime.day}일 (종일)' 
+        : KST.hm(event.startTime.millisecondsSinceEpoch);
     
     return Card(
       child: ListTile(
@@ -355,7 +356,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
         leading: compact ? null : CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           child: Text(
-            DateFormat('HH').format(event.startTime),
+            KST.hm(event.startTime.millisecondsSinceEpoch).split(':')[0],
             style: TextStyle(
               color: Theme.of(context).colorScheme.onPrimaryContainer,
               fontWeight: FontWeight.bold,
@@ -443,7 +444,7 @@ class _AgendaScreenState extends ConsumerState<AgendaScreen> {
     if (_showWeekView) {
       final startOfWeek = _selectedDate.subtract(Duration(days: _selectedDate.weekday - 1));
       final endOfWeek = startOfWeek.add(const Duration(days: 6));
-      return '${DateFormat('M월 d일').format(startOfWeek)} - ${DateFormat('M월 d일').format(endOfWeek)}';
+      return '${startOfWeek.month}월 ${startOfWeek.day}일 - ${endOfWeek.month}월 ${endOfWeek.day}일';
     } else {
       final weekdays = ['월', '화', '수', '목', '금', '토', '일'];
       final weekday = weekdays[_selectedDate.weekday - 1];

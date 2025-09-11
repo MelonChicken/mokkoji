@@ -494,24 +494,9 @@ class _DayTimelineViewWrapperState extends State<_DayTimelineViewWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    // EventOccurrence를 TimelineEvent로 변환
-    final timelineEvents = widget.occurrences.map((occ) => TimelineEvent(
-      id: occ.id,
-      title: occ.title,
-      startTime: occ.startTime,
-      endTime: occ.endTime,
-      allDay: occ.allDay,
-      location: occ.location,
-      sourcePlatform: occ.sourcePlatform,
-      color: occ.platformColor != null 
-          ? Color(int.parse(occ.platformColor!.replaceFirst('#', '0xFF')))
-          : null,
-    )).toList();
-    
     return DayTimelineView(
       key: _timelineKey,
       date: DateTime.now(),
-      events: timelineEvents,
       controller: widget.controller,
       onEventTap: widget.onEventTap,
       onEventLongPress: widget.onEventLongPress,

@@ -4,7 +4,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../../core/time/kst.dart';
 
 class SyncBanner extends StatefulWidget {
   const SyncBanner({super.key});
@@ -185,7 +185,7 @@ class _SyncBannerState extends State<SyncBanner> {
     } else if (difference.inHours < 24) {
       return '${difference.inHours}시간 전';
     } else {
-      return DateFormat('M월 d일 HH:mm').format(time);
+      return KST.dayTime(time.millisecondsSinceEpoch);
     }
   }
 
@@ -388,7 +388,7 @@ class SimpleSyncBanner extends StatelessWidget {
     } else if (difference.inHours < 24) {
       return '${difference.inHours}시간 전';
     } else {
-      return DateFormat('M월 d일 HH:mm').format(time);
+      return KST.dayTime(time.millisecondsSinceEpoch);
     }
   }
 }

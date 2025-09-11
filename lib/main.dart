@@ -8,12 +8,22 @@ import 'features/events/providers/events_providers.dart';
 import 'app/app_lifecycle_sync.dart';
 import 'data/repositories/event_repository.dart';
 import 'core/time/app_time.dart';
+import 'core/time/kst.dart';
+import 'db/app_database.dart';
+import 'data/migrations/001_fix_utc_migration.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize KST timezone data - REQUIRED for strict UTC/KST contract
   await AppTime.init();
+  
+  // Initialize KST forced display - ensures consistent timezone regardless of device settings
+  KST.init();
+  
+  // Run UTC migration to fix any corrupted timezone data
+  final db = await AppDatabase.instance.database;
+  await FixUtcMigration.run(db);
   
   // Initialize database with seed data
   await eventRepository.initialize();

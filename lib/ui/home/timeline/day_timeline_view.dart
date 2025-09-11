@@ -1,63 +1,20 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/time/kst.dart';
 import '../../../features/events/data/event_entity.dart';
+import '../../../data/models/today_summary_data.dart';
 import '../../../theme/tokens.dart';
 import '../../../widgets/source_chip.dart';
 import '../../../core/time/app_time.dart';
+import '../../../data/providers/unified_providers.dart';
+import '../../../devtools/time_sanity_overlay.dart';
+import '../../../core/time/date_key.dart';
 
-class TimelineEvent {
-  final String id;
-  final String title;
-  final DateTime startTime;
-  final DateTime? endTime;
-  final bool allDay;
-  final String? location;
-  final String sourcePlatform;
-  final Color? color;
+// TimelineEvent class removed - using EventOccurrence directly for proper timezone handling
 
-  const TimelineEvent({
-    required this.id,
-    required this.title,
-    required this.startTime,
-    this.endTime,
-    required this.allDay,
-    this.location,
-    required this.sourcePlatform,
-    this.color,
-  });
-
-  factory TimelineEvent.fromEntity(EventEntity entity) {
-    return TimelineEvent(
-      id: entity.id,
-      title: entity.title,
-      startTime: DateTime.parse(entity.startDt),
-      endTime: entity.endDt != null ? DateTime.parse(entity.endDt!) : null,
-      allDay: entity.allDay,
-      location: entity.location,
-      sourcePlatform: entity.sourcePlatform,
-      color: entity.platformColor != null 
-          ? Color(int.parse(entity.platformColor!.replaceFirst('#', '0xFF')))
-          : null,
-    );
-  }
-
-  int get durationMinutes {
-    if (endTime == null) return 60; // Default 1 hour
-    final duration = endTime!.difference(startTime).inMinutes;
-    return duration < 1 ? 1 : duration; // 최소 1분 보장
-  }
-
-  int get startMinuteFromMidnight {
-    // KST 기준으로 변환 후 자정부터의 분 계산 (타임라인 배치용)
-    final kstTime = AppTime.toKst(startTime);
-    return AppTime.minutesFromMidnightKst(kstTime);
-  }
-}
-
-class DayTimelineView extends StatefulWidget {
+class DayTimelineView extends ConsumerStatefulWidget {
   final DateTime date;
-  final List<TimelineEvent> events;
   final Function(String eventId)? onEventTap;
   final Function(String eventId)? onEventLongPress;
   final ScrollController? controller;
@@ -67,7 +24,6 @@ class DayTimelineView extends StatefulWidget {
   const DayTimelineView({
     super.key,
     required this.date,
-    required this.events,
     this.onEventTap,
     this.onEventLongPress,
     this.controller,
@@ -76,10 +32,10 @@ class DayTimelineView extends StatefulWidget {
   });
 
   @override
-  State<DayTimelineView> createState() => DayTimelineViewState();
+  ConsumerState<DayTimelineView> createState() => DayTimelineViewState();
 }
 
-class DayTimelineViewState extends State<DayTimelineView> {
+class DayTimelineViewState extends ConsumerState<DayTimelineView> {
   late ScrollController _scrollController;
   static const double kHourRowHeight = 64.0; // 시간당 행 높이 통일
   static const double _timeColumnWidth = 60.0;
@@ -202,8 +158,35 @@ class DayTimelineViewState extends State<DayTimelineView> {
     final widgetDateKst = AppTime.toKst(widget.date);
     final isToday = AppTime.isSameDayKst(now, widgetDateKst);
     
-    final timedEvents = widget.events.where((e) => !e.allDay).toList();
-    final allDayEvents = widget.events.where((e) => e.allDay).toList();
+    // Use unified provider with DateKey for timezone-aware data
+    final dateKey = DateKey(widgetDateKst.year, widgetDateKst.month, widgetDateKst.day);
+    final occurrencesAsync = ref.watch(occurrencesForDayProvider(dateKey));
+    
+    return occurrencesAsync.when(
+      data: (occurrences) {
+        final timedEvents = occurrences.where((e) => !e.allDay).toList();
+        final allDayEvents = occurrences.where((e) => e.allDay).toList();
+        
+        return _buildTimelineContent(context, cs, textTheme, now, widgetDateKst, isToday, timedEvents, allDayEvents, occurrences);
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Text('오류: $error', style: TextStyle(color: cs.error)),
+      ),
+    );
+  }
+  
+  Widget _buildTimelineContent(
+    BuildContext context,
+    ColorScheme cs,
+    TextTheme textTheme,
+    dynamic now,
+    dynamic widgetDateKst,
+    bool isToday,
+    List<EventOccurrence> timedEvents,
+    List<EventOccurrence> allDayEvents,
+    List<EventOccurrence> allOccurrences,
+  ) {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,38 +254,47 @@ class DayTimelineViewState extends State<DayTimelineView> {
     );
   }
 
-  Widget _buildAllDayEventChip(BuildContext context, TimelineEvent event) {
+  Widget _buildAllDayEventChip(BuildContext context, EventOccurrence event) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final eventColor = event.platformColor != null 
+        ? Color(int.parse(event.platformColor!.replaceFirst('#', '0xFF')))
+        : null;
     
-    return Material(
-      color: event.color?.withOpacity(0.1) ?? cs.primaryContainer,
-      borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-      child: InkWell(
-        onTap: () => widget.onEventTap?.call(event.id),
-        onLongPress: () => widget.onEventLongPress?.call(event.id),
-        borderRadius: BorderRadius.circular(AppTokens.radiusMd),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.s12,
-            vertical: AppTokens.s8,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                event.title,
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: event.color ?? cs.onPrimaryContainer,
-                ),
+    return Stack(
+      children: [
+        Material(
+          color: eventColor?.withOpacity(0.1) ?? cs.primaryContainer,
+          borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+          child: InkWell(
+            onTap: () => widget.onEventTap?.call(event.id),
+            onLongPress: () => widget.onEventLongPress?.call(event.id),
+            borderRadius: BorderRadius.circular(AppTokens.radiusMd),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.s12,
+                vertical: AppTokens.s8,
               ),
-              const SizedBox(width: AppTokens.s8),
-              SourceChip(type: _getSourceType(event.sourcePlatform)),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    event.title,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: eventColor ?? cs.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: AppTokens.s8),
+                  SourceChip(type: _getSourceType(event.sourcePlatform)),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
+        // Debug overlay in development builds
+        if (kDebugMode) TimeSanityOverlay(occurrence: event),
+      ],
     );
   }
 
@@ -323,9 +315,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      DateFormat('HH:mm', 'ko_KR').format(
-                        DateTime(2024, 1, 1, hour),
-                      ),
+                      '${hour.toString().padLeft(2, '0')}:00',
                       style: textTheme.labelSmall?.copyWith(
                         color: cs.onSurface.withOpacity(0.6),
                         fontWeight: FontWeight.w500,
@@ -411,7 +401,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
     );
   }
 
-  Widget _buildEvents(BuildContext context, List<TimelineEvent> events) {
+  Widget _buildEvents(BuildContext context, List<EventOccurrence> events) {
     final overlappingGroups = _groupOverlappingEvents(events);
     
     return Positioned(
@@ -420,28 +410,35 @@ class DayTimelineViewState extends State<DayTimelineView> {
       right: 0,
       bottom: 0,
       child: Stack(
-        children: overlappingGroups.expand((group) {
-          return _buildEventGroup(context, group);
-        }).toList(),
+        children: [
+          // Add debug overlay for stream consistency
+          if (kDebugMode) StreamDebugOverlay(
+            screenName: 'Timeline',
+            occurrences: events,
+            streamSource: 'unifiedProvider',
+          ),
+          ...overlappingGroups.expand((group) {
+            return _buildEventGroup(context, group);
+          }),
+        ],
       ),
     );
   }
 
-  List<List<TimelineEvent>> _groupOverlappingEvents(List<TimelineEvent> events) {
-    final sortedEvents = List<TimelineEvent>.from(events)
-      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+  List<List<EventOccurrence>> _groupOverlappingEvents(List<EventOccurrence> events) {
+    final sortedEvents = List<EventOccurrence>.from(events)
+      ..sort((a, b) => a.startKst.compareTo(b.startKst)); // Use KST for UI sorting
     
-    final groups = <List<TimelineEvent>>[];
+    final groups = <List<EventOccurrence>>[];
     
     for (final event in sortedEvents) {
       bool addedToGroup = false;
       
       for (final group in groups) {
         final lastEvent = group.last;
-        final lastEventEnd = lastEvent.endTime ?? 
-            lastEvent.startTime.add(Duration(minutes: lastEvent.durationMinutes));
         
-        if (event.startTime.isBefore(lastEventEnd)) {
+        // Use KST times for overlap detection in UI
+        if (event.startKst.isBefore(lastEvent.endKst)) {
           group.add(event);
           addedToGroup = true;
           break;
@@ -456,7 +453,7 @@ class DayTimelineViewState extends State<DayTimelineView> {
     return groups;
   }
 
-  List<Widget> _buildEventGroup(BuildContext context, List<TimelineEvent> group) {
+  List<Widget> _buildEventGroup(BuildContext context, List<EventOccurrence> group) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final pixelsPerMinute = kHourRowHeight / 60.0;
@@ -466,13 +463,17 @@ class DayTimelineViewState extends State<DayTimelineView> {
       final event = entry.value;
       final columnCount = group.length > 3 ? 3 : group.length;
       final columnWidth = 1.0 / columnCount;
-      final eventColor = event.color ?? cs.primary;
+      final eventColor = event.platformColor != null 
+          ? Color(int.parse(event.platformColor!.replaceFirst('#', '0xFF')))
+          : cs.primary;
+      
+      final startMinutes = AppTime.minutesFromMidnightKst(event.startKst);
       
       if (index >= 2 && group.length > 3) {
         final remainingCount = group.length - 2;
         return Positioned(
           left: 2 * columnWidth * MediaQuery.of(context).size.width - _timeColumnWidth,
-          top: event.startMinuteFromMidnight * pixelsPerMinute,
+          top: startMinutes * pixelsPerMinute,
           width: columnWidth * (MediaQuery.of(context).size.width - _timeColumnWidth) - 8,
           height: 40,
           child: Container(
@@ -500,62 +501,68 @@ class DayTimelineViewState extends State<DayTimelineView> {
       
       return Positioned(
         left: index * columnWidth * (MediaQuery.of(context).size.width - _timeColumnWidth),
-        top: event.startMinuteFromMidnight * pixelsPerMinute,
+        top: startMinutes * pixelsPerMinute,
         width: columnWidth * (MediaQuery.of(context).size.width - _timeColumnWidth) - 8,
         height: (event.durationMinutes * pixelsPerMinute).clamp(40.0, double.infinity),
-        child: Material(
-          color: eventColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-          child: InkWell(
-            onTap: () => widget.onEventTap?.call(event.id),
-            onLongPress: () => widget.onEventLongPress?.call(event.id),
-            borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-            child: Container(
-              margin: const EdgeInsets.only(right: 4, bottom: 2),
-              padding: const EdgeInsets.all(AppTokens.s8),
-              decoration: BoxDecoration(
-                border: Border.all(color: eventColor.withOpacity(0.6)),
+        child: Stack(
+          children: [
+            Material(
+              color: eventColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppTokens.radiusSm),
+              child: InkWell(
+                onTap: () => widget.onEventTap?.call(event.id),
+                onLongPress: () => widget.onEventLongPress?.call(event.id),
                 borderRadius: BorderRadius.circular(AppTokens.radiusSm),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event.title,
-                    style: textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: eventColor,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                child: Container(
+                  margin: const EdgeInsets.only(right: 4, bottom: 2),
+                  padding: const EdgeInsets.all(AppTokens.s8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: eventColor.withOpacity(0.6)),
+                    borderRadius: BorderRadius.circular(AppTokens.radiusSm),
                   ),
-                  if (event.location != null) ...[
-                    const SizedBox(height: AppTokens.s4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          size: 12,
-                          color: cs.onSurface.withOpacity(0.6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: eventColor,
                         ),
-                        const SizedBox(width: AppTokens.s2),
-                        Expanded(
-                          child: Text(
-                            event.location!,
-                            style: textTheme.labelSmall?.copyWith(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (event.location != null) ...[
+                        const SizedBox(height: AppTokens.s4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              size: 12,
                               color: cs.onSurface.withOpacity(0.6),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            const SizedBox(width: AppTokens.s2),
+                            Expanded(
+                              child: Text(
+                                event.location!,
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: cs.onSurface.withOpacity(0.6),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+            // Debug overlay in development builds
+            if (kDebugMode) TimeSanityOverlay(occurrence: event),
+          ],
         ),
       );
     }).toList();
@@ -626,8 +633,8 @@ class _TimeGridPainter extends CustomPainter {
       final usePaint = (h == 0 || h == 24) ? thickPaint : paint;
       
       canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
+        Offset(0, y.toDouble()),
+        Offset(size.width, y.toDouble()),
         usePaint,
       );
       
@@ -639,8 +646,8 @@ class _TimeGridPainter extends CustomPainter {
           ..strokeWidth = 0.5;
         
         canvas.drawLine(
-          Offset(0, halfY),
-          Offset(size.width, halfY),
+          Offset(0, halfY.toDouble()),
+          Offset(size.width, halfY.toDouble()),
           halfPaint,
         );
       }

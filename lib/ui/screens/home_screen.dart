@@ -4,7 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
+import '../../core/time/kst.dart';
 import '../../data/repositories/event_repository.dart';
 import '../../data/local/rrule_expander.dart';
 import '../../core/time/app_time.dart';
@@ -184,8 +184,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
-    final timeFormat = event.isAllDay ? 'MMM d일 (종일)' : 'HH:mm';
-    final timeText = DateFormat(timeFormat).format(event.startTime);
+    final timeText = event.isAllDay 
+        ? '${event.startTime.day}일 (종일)' 
+        : KST.hm(event.startTime.millisecondsSinceEpoch);
     
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -193,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: CircleAvatar(
           backgroundColor: colorScheme.primaryContainer,
           child: Text(
-            DateFormat('HH').format(event.startTime),
+            KST.hm(event.startTime.millisecondsSinceEpoch).split(':')[0],
             style: TextStyle(
               color: colorScheme.onPrimaryContainer,
               fontWeight: FontWeight.bold,

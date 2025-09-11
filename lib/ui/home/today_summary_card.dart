@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../../core/time/kst.dart';
 import '../../data/models/today_summary_data.dart';
 import '../../theme/tokens.dart';
 import '../../widgets/source_chip.dart';
@@ -115,7 +115,7 @@ class TodaySummaryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: AppTokens.s4),
                       Text(
-                        DateFormat('HH:mm').format(data.next!.startTime),
+                        KST.hm(data.next!.startTime.millisecondsSinceEpoch),
                         style: textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: cs.onSurface,
@@ -191,7 +191,7 @@ class TodaySummaryCard extends StatelessWidget {
           const SizedBox(height: AppTokens.s8),
           
           Text(
-            '마지막 동기화: ${DateFormat('HH:mm').format(data.lastSyncAt)}',
+            '마지막 동기화: ${KST.hm(data.lastSyncAt.millisecondsSinceEpoch)}',
             style: textTheme.labelSmall?.copyWith(
               color: cs.onPrimaryContainer.withOpacity(0.7),
             ),

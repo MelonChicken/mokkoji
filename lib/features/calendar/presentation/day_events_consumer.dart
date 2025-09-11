@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import '../../../core/time/kst.dart';
 import '../../events/providers/events_providers.dart';
 import '../../events/providers/events_watch_provider.dart';
 import '../../events/providers/debounced_sync_provider.dart';
@@ -109,7 +109,6 @@ class _EventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final startTime = DateTime.parse(event.startDt);
-    final timeFormat = DateFormat.Hm();
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -155,7 +154,7 @@ class _EventTile extends StatelessWidget {
                 Text(
                   event.allDay
                       ? '하루 종일'
-                      : '${timeFormat.format(startTime)}${event.endDt != null ? ' - ${timeFormat.format(DateTime.parse(event.endDt!))}' : ''}',
+                      : '${KST.hmFromIso(event.startDt)}${event.endDt != null ? ' - ${KST.hmFromIso(event.endDt!)}' : ''}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),

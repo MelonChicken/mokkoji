@@ -6,6 +6,7 @@ import '../widgets/source_chip.dart';
 import '../widgets/avatar_stack.dart';
 import '../data/repositories/event_repository.dart';
 import '../features/events/data/event_entity.dart';
+import '../core/time/kst.dart';
 
 class DetailScreen extends StatefulWidget {
   final String eventId;
@@ -698,26 +699,13 @@ class _DetailScreenState extends State<DetailScreen> {
   
   /// EventEntity를 UI용 데이터로 변환
   Map<String, dynamic> _convertEventToDisplayData(EventEntity event) {
-    // Parse start date time
-    final startDateTime = DateTime.parse(event.startDt);
-    final endDateTime = event.endDt != null ? DateTime.parse(event.endDt!) : null;
+    // Format date using KST helpers - ensures consistent KST display regardless of device timezone
+    final formattedDate = KST.dayFromIso(event.startDt);
     
-    // Format date
-    final dateFormat = DateFormat('yyyy년 MM월 dd일', 'ko');
-    final formattedDate = dateFormat.format(startDateTime);
-    
-    // Format time
+    // Format time using KST helpers
     String? formattedTime;
     if (!event.allDay) {
-      final timeFormat = DateFormat('HH:mm');
-      final startTime = timeFormat.format(startDateTime);
-      final endTime = endDateTime != null ? timeFormat.format(endDateTime) : null;
-      
-      if (endTime != null) {
-        formattedTime = '$startTime - $endTime';
-      } else {
-        formattedTime = startTime;
-      }
+      formattedTime = KST.rangeFromIso(event.startDt, event.endDt);
     }
     
     // Determine source type

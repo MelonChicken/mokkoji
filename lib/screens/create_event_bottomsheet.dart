@@ -1,23 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:uuid/uuid.dart';
-import '../data/repositories/event_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/time/kst.dart';
+import 'package:timezone/timezone.dart' as tz;
+import '../core/time/app_time.dart';
+import '../data/providers/unified_providers.dart';
+import '../data/services/event_write_service.dart';
+import '../ui/event/new_event_sheet_v2.dart';
 
 Future<void> showEventCreateSheet(BuildContext context, {VoidCallback? onEventCreated}) {
-  return showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-    barrierColor: Colors.black.withOpacity(0.5),
-    clipBehavior: Clip.antiAlias,
-    shape: RoundedRectangleBorder(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      side: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.6)),
-    ),
-    builder: (ctx) => EventCreateSheet(onEventCreated: onEventCreated),
-  );
+  return showNewEventSheetV2(context);
 }
 
 // Helper widget for labeled input fields
@@ -47,16 +39,16 @@ class _LabeledField extends StatelessWidget {
   }
 }
 
-class EventCreateSheet extends StatefulWidget {
+class EventCreateSheet extends ConsumerStatefulWidget {
   final VoidCallback? onEventCreated;
   
   const EventCreateSheet({super.key, this.onEventCreated});
 
   @override
-  State<EventCreateSheet> createState() => _EventCreateSheetState();
+  ConsumerState<EventCreateSheet> createState() => _EventCreateSheetState();
 }
 
-class _EventCreateSheetState extends State<EventCreateSheet> {
+class _EventCreateSheetState extends ConsumerState<EventCreateSheet> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _placeController = TextEditingController();
@@ -147,7 +139,7 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                         controller: TextEditingController(
                           text: _selectedDate == null
                               ? ''
-                              : DateFormat('yyyy-MM-dd').format(_selectedDate!),
+                              : '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')}',
                         ),
                         decoration: const InputDecoration(
                           hintText: '연도-월-일',
@@ -317,8 +309,9 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                       ? () async {
                           if (!_formKey.currentState!.validate()) return;
                           
-                          // Combine date + time → DateTime
-                          final eventDateTime = DateTime(
+                          // Create KST datetime from user input
+                          final kstDateTime = tz.TZDateTime(
+                            AppTime.kst,
                             _selectedDate!.year,
                             _selectedDate!.month,
                             _selectedDate!.day,
@@ -326,26 +319,31 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                             _selectedTime!.minute,
                           );
                           
-                          // 선택된 캘린더 연동 정보 확인
-                          String selectedPlatform = 'internal'; // 기본값
+                          // Convert to UTC for storage
+                          final utcStartTime = AppTime.fromKstToUtc(kstDateTime);
+                          final utcEndTime = utcStartTime.add(const Duration(hours: 1));
+                          
+                          // Selected platform for integration
+                          String selectedPlatform = 'internal';
                           if (_selectedSources.isNotEmpty) {
                             selectedPlatform = _selectedSources.first;
                           }
                           
                           if (kDebugMode) {
-                            print('🎯 Selected platforms: $_selectedSources');
-                            print('🎯 Using platform: $selectedPlatform');
+                            print('🎯 KST input: ${kstDateTime.toIso8601String()}');
+                            print('🎯 UTC storage: ${utcStartTime.toIso8601String()}');
+                            print('🎯 Platform: $selectedPlatform');
                           }
                           
-                          // Create event request
-                          final request = EventCreateRequest(
-                            id: const Uuid().v4(),
+                          // Create event using unified write service
+                          final writeService = ref.read(eventWriteServiceProvider);
+                          final draft = EventDraft(
                             title: _titleController.text.trim(),
                             description: _placeController.text.trim().isNotEmpty 
                                 ? _placeController.text.trim() 
                                 : null,
-                            startTime: eventDateTime,
-                            endTime: eventDateTime.add(const Duration(hours: 1)),
+                            startTime: utcStartTime, // UTC for storage
+                            endTime: utcEndTime,     // UTC for storage
                             location: _placeController.text.trim().isNotEmpty 
                                 ? _placeController.text.trim() 
                                 : null,
@@ -353,8 +351,8 @@ class _EventCreateSheetState extends State<EventCreateSheet> {
                           );
                           
                           try {
-                            // Call API to create event
-                            await eventRepository.createEvent(request);
+                            // Create event through unified write service
+                            await writeService.addEvent(draft);
                             
                             // Show success feedback
                             if (context.mounted) {
