@@ -230,10 +230,16 @@ class DetailEventViewModel extends FamilyAsyncNotifier<DetailEventState, String>
     return true;
   }
 
-  /// Delete event with confirmation
-  Future<void> deleteEvent() async {
+  /// Delete event with confirmation and return deleted event for undo
+  Future<EventEntity?> deleteEvent() async {
     final writeService = ref.read(eventWriteServiceProvider);
-    await writeService.deleteEvent(eventId);
+    return await writeService.deleteEvent(eventId);
+  }
+
+  /// Restore deleted event (undo functionality)
+  Future<void> restoreEvent() async {
+    final writeService = ref.read(eventWriteServiceProvider);
+    await writeService.restoreEvent(eventId);
   }
 
   /// Share event details

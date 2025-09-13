@@ -68,6 +68,17 @@ class EventsDao {
     return rows.isEmpty ? null : EventEntity.fromMap(rows.first);
   }
 
+  Future<EventEntity?> getByIdIncludingDeleted(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'events',
+      where: 'id = ?', // Include deleted events
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : EventEntity.fromMap(rows.first);
+  }
+
   Future<EventEntity?> getByIcalUid(String icalUid) async {
     final db = await _db;
     final rows = await db.query(

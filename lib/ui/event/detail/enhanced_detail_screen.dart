@@ -167,7 +167,7 @@ class EnhancedDetailScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('일정 삭제'),
-        content: const Text('이 일정을 삭제하시겠습니까?\n삭제된 일정은 복구할 수 없습니다.'),
+        content: const Text('이 일정을 삭제하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -178,16 +178,48 @@ class EnhancedDetailScreen extends ConsumerWidget {
               Navigator.of(ctx).pop(); // Close dialog
 
               try {
-                await ref.read(detailEventVmProvider(eventId).notifier).deleteEvent();
+                // Delete and get the deleted event for undo
+                final deletedEvent = await ref.read(detailEventVmProvider(eventId).notifier).deleteEvent();
 
-                if (context.mounted) {
+                if (context.mounted && deletedEvent != null) {
+                  // Navigate back first
+                  _handleBackNavigation(context);
+
+                  // Show undo snackbar
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('일정이 삭제되었습니다'),
+                    SnackBar(
+                      content: Text('${deletedEvent.title} 삭제됨'),
                       behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 5),
+                      action: SnackBarAction(
+                        label: '되돌리기',
+                        onPressed: () async {
+                          try {
+                            await ref.read(detailEventVmProvider(eventId).notifier).restoreEvent();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${deletedEvent.title} 복구됨'),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('복구 실패: $e'),
+                                  backgroundColor: Theme.of(context).colorScheme.error,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
                     ),
                   );
-                  _handleBackNavigation(context);
                 }
               } catch (e) {
                 if (context.mounted) {
