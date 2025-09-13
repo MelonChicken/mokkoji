@@ -25,6 +25,8 @@ class EditEventFormState {
   final bool hasChanges;
   final bool saved;
   final bool isLoading;
+  final String? conflictMessage; // For displaying conflict warnings
+  final bool hasConflict; // Whether there's a detected conflict
 
   const EditEventFormState({
     this.title = '',
@@ -38,6 +40,8 @@ class EditEventFormState {
     this.hasChanges = false,
     this.saved = false,
     this.isLoading = false,
+    this.conflictMessage,
+    this.hasConflict = false,
   });
 
   bool get isValid => title.trim().isNotEmpty && startTod != null && durationMinutes >= 5;
@@ -64,6 +68,8 @@ class EditEventFormState {
     bool? hasChanges,
     bool? saved,
     bool? isLoading,
+    String? conflictMessage,
+    bool? hasConflict,
   }) {
     return EditEventFormState(
       title: title ?? this.title,
@@ -77,6 +83,8 @@ class EditEventFormState {
       hasChanges: hasChanges ?? this.hasChanges,
       saved: saved ?? this.saved,
       isLoading: isLoading ?? this.isLoading,
+      conflictMessage: conflictMessage,
+      hasConflict: hasConflict ?? this.hasConflict,
     );
   }
 }
@@ -189,11 +197,20 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
         location: state.location.trim().isEmpty ? null : state.location.trim(),
       );
 
-      // Save through service
-      await ref.read(eventWriteServiceProvider).updateEvent(patch);
+      // Save through service with conflict detection
+      await ref.read(eventWriteServiceProvider).updateEvent(
+        patch,
+        expectedUpdatedAt: _originalEvent!.updatedAt,
+      );
 
       // Success - mark as saved and reset dirty flag
-      state = state.copyWith(isSaving: false, saved: true, hasChanges: false);
+      state = state.copyWith(
+        isSaving: false,
+        saved: true,
+        hasChanges: false,
+        hasConflict: false,
+        conflictMessage: null,
+      );
 
       // Close sheet and show success
       if (context.mounted) {
@@ -205,9 +222,35 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
           ),
         );
       }
+    } on EventConflictException catch (conflict) {
+      // Conflict detected - show warning banner
+      state = state.copyWith(
+        isSaving: false,
+        hasConflict: true,
+        conflictMessage: conflict.message,
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(conflict.message),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: '새로고침',
+              onPressed: () => _refreshAndRetry(),
+            ),
+          ),
+        );
+      }
     } catch (e) {
-      // Error state - keep form open for retry
-      state = state.copyWith(isSaving: false, error: e.toString());
+      // General error state - keep form open for retry
+      state = state.copyWith(
+        isSaving: false,
+        error: e.toString(),
+        hasConflict: false,
+        conflictMessage: null,
+      );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -226,6 +269,32 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
   }
 
   bool hasUnsavedChanges() => state.hasChanges;
+
+  /// Refresh original event data and clear conflict state
+  void _refreshAndRetry() async {
+    if (_originalEvent == null) return;
+
+    try {
+      // Get fresh event data
+      final freshEvent = await ref.read(eventByIdProvider(_originalEvent!.id).future);
+      if (freshEvent != null) {
+        _originalEvent = freshEvent;
+        // Clear conflict state
+        state = state.copyWith(
+          hasConflict: false,
+          conflictMessage: null,
+          error: null,
+        );
+      }
+    } catch (e) {
+      // Handle refresh failure
+      state = state.copyWith(
+        hasConflict: false,
+        conflictMessage: null,
+        error: 'Failed to refresh: $e',
+      );
+    }
+  }
 }
 
 /// Provider for edit event form
@@ -271,6 +340,17 @@ class EditEventSheet extends ConsumerWidget {
               // Header
               _HeaderBar(hasChanges: state.hasChanges),
               const SizedBox(height: 8),
+
+              // Conflict warning banner
+              if (state.hasConflict) ...[
+                _ConflictWarningBanner(
+                  message: state.conflictMessage ?? '충돌이 감지되었습니다.',
+                  onRefresh: () => notifier._refreshAndRetry(),
+                  onDismiss: () => ref.read(editEventFormProvider(eventId).notifier)
+                      .state = state.copyWith(hasConflict: false, conflictMessage: null),
+                ),
+                const SizedBox(height: 8),
+              ],
 
               // Form content
               Flexible(
@@ -733,6 +813,75 @@ class _DescriptionField extends StatelessWidget {
         textInputAction: TextInputAction.done,
         maxLines: 3,
         minLines: 1,
+      ),
+    );
+  }
+}
+
+/// Conflict warning banner widget
+class _ConflictWarningBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback onRefresh;
+  final VoidCallback onDismiss;
+
+  const _ConflictWarningBanner({
+    required this.message,
+    required this.onRefresh,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.error.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: colorScheme.onErrorContainer,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onErrorContainer,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onRefresh,
+            style: TextButton.styleFrom(
+              foregroundColor: colorScheme.onErrorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('새로고침'),
+          ),
+          IconButton(
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close),
+            color: colorScheme.onErrorContainer,
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+        ],
       ),
     );
   }
