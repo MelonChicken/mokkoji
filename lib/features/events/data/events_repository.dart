@@ -5,6 +5,7 @@ import 'event_overrides_dao.dart';
 import 'event_entity.dart';
 import 'event_override_entity.dart';
 import 'events_api.dart';
+import '../../../db/db_signal.dart';
 
 abstract class EventsApi {
   Future<Map<String, dynamic>> fetchEvents({
@@ -100,6 +101,17 @@ class EventsRepository {
   // 특정 이벤트 조회
   Future<EventEntity?> getById(String id) async {
     return dao.getById(id);
+  }
+
+  // 특정 이벤트 실시간 구독
+  Stream<EventEntity?> watchById(String id) async* {
+    // 1. 초기 데이터 즉시 반환
+    yield await dao.getById(id);
+
+    // 2. DB 변경 신호를 구독하여 실시간 업데이트
+    await for (final _ in DbSignal.instance.eventsStream) {
+      yield await dao.getById(id);
+    }
   }
 
   Future<EventEntity?> getByIcalUid(String icalUid) async {

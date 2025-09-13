@@ -48,11 +48,11 @@ final localEventsByRangeProvider = FutureProvider.family.autoDispose(
   },
 );
 
-// 특정 이벤트 조회
-final eventByIdProvider = FutureProvider.family.autoDispose(
-  (ref, String id) async {
+// 특정 이벤트 실시간 구독
+final eventByIdProvider = StreamProvider.family.autoDispose(
+  (ref, String id) {
     final repo = ref.read(eventsRepositoryProvider);
-    return repo.getById(id);
+    return repo.watchById(id);
   },
 );
 
