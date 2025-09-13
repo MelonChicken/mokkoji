@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'tokens.dart';
 import 'contrast.dart';
+import 'mokkoji_colors.dart';
 
 /// 대비 최적화된 ColorScheme 생성
 ColorScheme _createOptimizedColorScheme({
@@ -485,6 +486,269 @@ ThemeData darkTheme(BuildContext context) {
     
     // 접근성 개선
     visualDensity: VisualDensity.adaptivePlatformDensity,
+  );
+}
+
+/// Mokkoji 브랜드 테마 (라이트 모드)
+ThemeData mokkojiLightTheme() {
+  const colorScheme = ColorScheme.light(
+    primary: MokkojiColors.aqua600,
+    primaryContainer: MokkojiColors.aqua300,
+    background: MokkojiColors.aqua50,
+    surface: MokkojiColors.aqua50,
+    onPrimary: MokkojiColors.onAqua,
+    onSurface: MokkojiColors.onAqua,
+  );
+
+  final textTheme = _createTextTheme(
+    colorScheme: colorScheme,
+    isDark: false,
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: colorScheme,
+    textTheme: textTheme,
+    scaffoldBackgroundColor: Colors.white,
+    
+    // Input field theme with Aqua colors
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: MokkojiColors.aqua50,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: MokkojiColors.aqua200),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: MokkojiColors.aqua500, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 1),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 2),
+      ),
+      hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+      labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+    ),
+    
+    // Chip theme with Aqua colors
+    chipTheme: ChipThemeData(
+      backgroundColor: MokkojiColors.aqua50,
+      selectedColor: MokkojiColors.aqua300,
+      labelStyle: const TextStyle(
+        color: MokkojiColors.onAqua,
+        fontWeight: FontWeight.w700,
+      ),
+      shape: const StadiumBorder(),
+      side: BorderSide(color: MokkojiColors.aqua200.withOpacity(0.7)),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    ),
+    
+    // Icon button theme with Aqua colors
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        backgroundColor: MokkojiColors.aqua300.withOpacity(0.9),
+        disabledBackgroundColor: MokkojiColors.aqua50,
+        foregroundColor: MokkojiColors.onAqua,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    ),
+    
+    // Bottom sheet theme with Aqua colors
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: MokkojiColors.aqua50,
+      surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: MokkojiColors.aqua50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      elevation: 8,
+    ),
+    
+    // Elevated button theme with Aqua colors
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: MokkojiColors.aqua600,
+        foregroundColor: MokkojiColors.onAqua,
+        disabledBackgroundColor: MokkojiColors.aqua200,
+        textStyle: const TextStyle(fontWeight: FontWeight.bold),
+        elevation: 0,
+        shape: const StadiumBorder(),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      ).copyWith(
+        backgroundColor: MaterialStateProperty.resolveWith<Color?>(
+          (Set<MaterialState> states) {
+            if (states.contains(MaterialState.pressed)) {
+              return MokkojiColors.aqua500;
+            }
+            if (states.contains(MaterialState.disabled)) {
+              return MokkojiColors.aqua200;
+            }
+            return MokkojiColors.aqua600;
+          },
+        ),
+      ),
+    ),
+    
+    // Other component themes from existing implementation
+    appBarTheme: _ComponentThemes.appBarTheme(colorScheme),
+    cardTheme: _ComponentThemes.cardTheme(colorScheme, false),
+    filledButtonTheme: _ComponentThemes.filledButtonTheme(colorScheme),
+    textButtonTheme: _ComponentThemes.textButtonTheme(colorScheme),
+    dialogTheme: _ComponentThemes.dialogTheme(colorScheme),
+    snackBarTheme: _ComponentThemes.snackBarTheme(colorScheme),
+    dividerTheme: _ComponentThemes.dividerTheme(colorScheme),
+    iconTheme: _ComponentThemes.iconTheme(colorScheme),
+    primaryIconTheme: IconThemeData(color: colorScheme.onPrimary),
+    
+    // Material 3 features
+    splashFactory: InkSparkle.splashFactory,
+    visualDensity: VisualDensity.adaptivePlatformDensity,
+    
+    // Add Mokkoji gradients extension
+    extensions: const <ThemeExtension<dynamic>>[
+      MokkojiColors.light,
+    ],
+  );
+}
+
+/// Mokkoji 브랜드 다크 테마
+ThemeData mokkojiDarkTheme() {
+  const colorScheme = ColorScheme.dark(
+    primary: MokkojiColors.aqua300,
+    onPrimary: MokkojiColors.onAqua,
+    surface: MokkojiColors.darkSurface,
+    background: MokkojiColors.darkBg,
+    onSurface: MokkojiColors.onSurface,
+    outline: MokkojiColors.darkHair,
+  );
+
+  final textTheme = _createTextTheme(
+    colorScheme: colorScheme,
+    isDark: true,
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    colorScheme: colorScheme,
+    textTheme: textTheme,
+    scaffoldBackgroundColor: MokkojiColors.darkBg,
+    
+    // Input field theme with Dark Aqua colors
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: MokkojiColors.darkSurface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: MokkojiColors.darkHair),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: MokkojiColors.aqua500, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 1),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: colorScheme.error, width: 2),
+      ),
+      hintStyle: const TextStyle(color: MokkojiColors.onSurface2),
+      labelStyle: const TextStyle(color: MokkojiColors.onSurface2),
+    ),
+    
+    // Chip theme with Dark Aqua colors
+    chipTheme: ChipThemeData(
+      backgroundColor: MokkojiColors.darkSurface,
+      selectedColor: MokkojiColors.aqua500,
+      labelStyle: const TextStyle(
+        color: MokkojiColors.onSurface,
+        fontWeight: FontWeight.w700,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      side: const BorderSide(color: MokkojiColors.darkHair),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    ),
+    
+    // Icon button theme with Dark Aqua colors
+    iconButtonTheme: IconButtonThemeData(
+      style: ButtonStyle(
+        backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return MokkojiColors.darkSurface;
+          }
+          return MokkojiColors.aqua300.withOpacity(0.22);
+        }),
+        foregroundColor: const WidgetStatePropertyAll(MokkojiColors.onSurface),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
+    ),
+    
+    // Bottom sheet theme with Dark colors
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: MokkojiColors.darkBg,
+      surfaceTintColor: Colors.transparent,
+      modalBackgroundColor: MokkojiColors.darkBg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      elevation: 8,
+    ),
+    
+    // Elevated button theme with Dark Aqua colors
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: MokkojiColors.aqua300,
+        foregroundColor: MokkojiColors.onAqua,
+        disabledBackgroundColor: MokkojiColors.darkSurface,
+        textStyle: const TextStyle(fontWeight: FontWeight.bold),
+        elevation: 0,
+        shape: const StadiumBorder(),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      ).copyWith(
+        backgroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+          if (states.contains(WidgetState.pressed)) {
+            return MokkojiColors.aqua500;
+          }
+          if (states.contains(WidgetState.disabled)) {
+            return MokkojiColors.darkSurface;
+          }
+          return MokkojiColors.aqua300;
+        }),
+        overlayColor: WidgetStatePropertyAll(MokkojiColors.aqua500.withOpacity(0.12)),
+      ),
+    ),
+    
+    // Other component themes from existing implementation
+    appBarTheme: _ComponentThemes.appBarTheme(colorScheme),
+    cardTheme: _ComponentThemes.cardTheme(colorScheme, true),
+    filledButtonTheme: _ComponentThemes.filledButtonTheme(colorScheme),
+    textButtonTheme: _ComponentThemes.textButtonTheme(colorScheme),
+    dialogTheme: _ComponentThemes.dialogTheme(colorScheme),
+    snackBarTheme: _ComponentThemes.snackBarTheme(colorScheme),
+    dividerTheme: _ComponentThemes.dividerTheme(colorScheme),
+    iconTheme: _ComponentThemes.iconTheme(colorScheme),
+    primaryIconTheme: IconThemeData(color: colorScheme.onPrimary),
+    
+    // Material 3 features
+    splashFactory: InkSparkle.splashFactory,
+    visualDensity: VisualDensity.adaptivePlatformDensity,
+    
+    // Add Mokkoji colors extension
+    extensions: const <ThemeExtension<dynamic>>[
+      MokkojiColors.light,
+    ],
   );
 }
 

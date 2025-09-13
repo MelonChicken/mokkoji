@@ -6,6 +6,9 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../core/time/app_time.dart';
 import '../../data/services/event_write_service.dart';
 import '../../data/providers/unified_providers.dart';
+import '../widgets/field_card.dart';
+import '../widgets/gradient_button.dart';
+import '../../theme/mokkoji_colors.dart';
 
 /// State for the simplified new event form
 class NewEventFormState {
@@ -192,13 +195,14 @@ class NewEventSheetV2 extends ConsumerWidget {
             ),
             const SizedBox(height: 20),
             
-            // Save button
+            // Save button using GradientButton
             SizedBox(
               width: double.infinity,
-              child: FilledButton(
+              child: GradientButton(
                 onPressed: (!state.isValid || state.isSaving)
                     ? null
                     : () => notifier.save(ref, context),
+                enabled: state.isValid && !state.isSaving,
                 child: Text(state.isSaving ? '저장 중…' : '모으기'),
               ),
             ),
@@ -209,29 +213,40 @@ class NewEventSheetV2 extends ConsumerWidget {
   }
 }
 
-/// Header bar with drag handle and title
+/// Header bar with drag handle and title (no gradients)
 class _HeaderBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        // Drag handle
-        Container(
-          width: 36,
-          height: 4,
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: colorScheme.outlineVariant,
-            borderRadius: BorderRadius.circular(2),
+    
+    return Container(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+      decoration: BoxDecoration(
+        color: MokkojiColors.aqua50,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: colorScheme.outlineVariant,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-        ),
-        // Title
-        Text(
-          '새 일정 만들기',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-      ],
+          // Title
+          Text(
+            '새 일정 만들기',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -250,26 +265,18 @@ class _TitleField extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '제목 *',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
+    return FieldCard(
+      label: '제목 *',
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: '일정 제목을 입력하세요',
+          prefixIcon: Icon(Icons.title, color: colorScheme.onSurface.withOpacity(0.7)),
+          border: InputBorder.none,
+          filled: false,
         ),
-        const SizedBox(height: 6),
-        TextField(
-          decoration: InputDecoration(
-            hintText: '일정 제목을 입력하세요',
-            prefixIcon: Icon(Icons.title, color: colorScheme.onSurface.withOpacity(0.7)),
-          ),
-          onChanged: onChanged,
-          textInputAction: TextInputAction.next,
-        ),
-      ],
+        onChanged: onChanged,
+        textInputAction: TextInputAction.next,
+      ),
     );
   }
 }
@@ -546,26 +553,18 @@ class _LocationField extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '장소',
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w600,
-          ),
+    return FieldCard(
+      label: '장소',
+      child: TextField(
+        decoration: InputDecoration(
+          hintText: '장소를 입력하세요 (선택)',
+          prefixIcon: Icon(Icons.place_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
+          border: InputBorder.none,
+          filled: false,
         ),
-        const SizedBox(height: 6),
-        TextField(
-          decoration: InputDecoration(
-            hintText: '장소를 입력하세요 (선택)',
-            prefixIcon: Icon(Icons.place_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
-          ),
-          onChanged: onChanged,
-          textInputAction: TextInputAction.done,
-        ),
-      ],
+        onChanged: onChanged,
+        textInputAction: TextInputAction.done,
+      ),
     );
   }
 }

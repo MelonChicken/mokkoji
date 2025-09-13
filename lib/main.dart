@@ -90,8 +90,8 @@ class _MokkojiAppState extends State<MokkojiApp> {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: '모꼬지',
-      theme: lightTheme(context),
-      darkTheme: darkTheme(context),
+      theme: mokkojiLightTheme(),
+      darkTheme: mokkojiDarkTheme(),
       themeMode: _mode,
       routerConfig: AppRouter.router,
       locale: const Locale('ko'),
