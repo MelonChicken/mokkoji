@@ -21,7 +21,8 @@ class FieldCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+    final isDark = theme.brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -40,10 +41,10 @@ class FieldCard extends StatelessWidget {
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            color: backgroundColor ?? MokkojiColors.aqua50,
+            color: backgroundColor ?? (isDark ? MokkojiColors.darkAqua50 : MokkojiColors.aqua50),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: borderColor ?? MokkojiColors.aqua200,
+              color: borderColor ?? (isDark ? MokkojiColors.darkAqua200 : MokkojiColors.aqua200),
               width: 1,
             ),
           ),
