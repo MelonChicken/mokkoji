@@ -165,19 +165,38 @@ class EventsDao {
     final db = await _db;
     final where = StringBuffer('deleted_at IS NULL AND (rrule IS NOT NULL OR recurrence_rule IS NOT NULL)');
     final args = <Object?>[];
-    
+
     if (startIso != null && endIso != null) {
       where.write(' AND start_dt >= ? AND start_dt < ?');
       args..add(startIso)..add(endIso);
     }
-    
+
     final rows = await db.query(
       'events',
       where: where.toString(),
       whereArgs: args,
       orderBy: 'start_dt ASC',
     );
-    
+
     return rows.map(EventEntity.fromMap).toList();
+  }
+
+  /// Clear all recurrence fields for a master event
+  /// Sets rrule, recurrence_rule, and other repeat fields to NULL
+  Future<void> clearRecurrence(String id) async {
+    final db = await _db;
+    await db.update(
+      'events',
+      {
+        'rrule': null,
+        'recurrence_rule': null, // deprecated field
+        'rdate_json': null,
+        'exdate_json': null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    DbSignal.instance.pingEvents(); // ✅ Signal change
   }
 }
