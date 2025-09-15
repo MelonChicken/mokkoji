@@ -6,6 +6,9 @@ import 'event_entity.dart';
 import 'event_override_entity.dart';
 import 'events_api.dart';
 import '../../../db/db_signal.dart';
+import '../../../domain/models/event_display.dart';
+import '../../../core/time/kst.dart';
+import '../../../db/app_database.dart';
 
 abstract class EventsApi {
   Future<Map<String, dynamic>> fetchEvents({
@@ -249,5 +252,167 @@ class EventsRepository {
   // 강제 동기화 (수동 새로고침)
   Future<void> forceSync(String startIso, String endIso) async {
     await _backgroundSync(startIso, endIso, forceSync: true);
+  }
+
+  // ===== New methods for repeat instance integration =====
+
+  /// Get merged display events (masters + instances) for a date range
+  /// CONTRACT: include non-recurring masters, ALL instances, exclude recurring masters
+  Future<List<EventDisplay>> getDisplayEvents(
+    String startIso,
+    String endIso, {
+    List<String>? platforms,
+  }) async {
+    // Get all masters in the range
+    final allMasters = await dao.range(startIso, endIso, platforms: platforms);
+
+    // Get all instances in the range from database
+    final instances = await _getInstancesInRange(startIso, endIso);
+
+    final results = <EventDisplay>[];
+    final masterWithInstances = <String>{};
+
+    // First, process all instances and track which masters have instances
+    for (final instanceData in instances) {
+      final masterId = instanceData['master_event_id'] as String;
+      final master = allMasters.firstWhere(
+        (m) => m.id == masterId,
+        orElse: () => throw Exception('Master event not found for instance: $masterId'),
+      );
+
+      masterWithInstances.add(masterId);
+
+      results.add(EventDisplay(
+        id: 'instance_${instanceData['id']}',
+        parentId: masterId,
+        title: master.title,
+        description: master.description,
+        startDt: instanceData['start_utc'] as String,
+        endDt: instanceData['end_utc'] as String,
+        allDay: master.allDay,
+        location: master.location,
+        sourcePlatform: master.sourcePlatform,
+        platformColor: master.platformColor,
+        durationMin: master.durationMin,
+        isInstance: true,
+        isDetached: (instanceData['is_detached'] as int) == 1,
+        updatedAt: instanceData['updated_at'] as String,
+      ));
+    }
+
+    // Then, process masters that DON'T have instances (non-recurring or no instances in range)
+    for (final master in allMasters) {
+      if (!masterWithInstances.contains(master.id)) {
+        results.add(EventDisplay.fromMaster(master));
+      }
+    }
+
+    // Sort by start time
+    results.sort((a, b) => a.startTime.compareTo(b.startTime));
+
+    if (kDebugMode) {
+      debugPrint('[EventsRepository] getDisplayEvents: ${allMasters.length} masters, '
+                 '${instances.length} instances, ${results.length} display events, '
+                 '${masterWithInstances.length} masters with instances');
+    }
+
+    return results;
+  }
+
+  /// Get instances in UTC range from database
+  Future<List<Map<String, Object?>>> _getInstancesInRange(String startIso, String endIso) async {
+    // Direct database query for instances in range
+    final db = await AppDatabase.instance.database;
+
+    return await db.query(
+      'event_instances',
+      where: 'start_utc >= ? AND end_utc <= ?',
+      whereArgs: [startIso, endIso],
+      orderBy: 'start_utc ASC',
+    );
+  }
+
+  /// Watch events by day key (KST date) with instance merging
+  /// Returns a stream of EventDisplay objects for a specific KST day
+  Stream<List<EventDisplay>> watchByDayKey(String dayKeyKst) async* {
+    // Convert day key to UTC range for master query
+    final dayParts = dayKeyKst.split('-');
+    if (dayParts.length != 3) {
+      yield [];
+      return;
+    }
+
+    final year = int.parse(dayParts[0]);
+    final month = int.parse(dayParts[1]);
+    final day = int.parse(dayParts[2]);
+
+    final kstStart = DateTime(year, month, day);
+    final kstEnd = DateTime(year, month, day, 23, 59, 59, 999);
+
+    final startUtc = KST.toUtcIso(kstStart);
+    final endUtc = KST.toUtcIso(kstEnd);
+
+    // Function to get current data
+    Future<List<EventDisplay>> getCurrentData() async {
+      return getDisplayEvents(startUtc, endUtc);
+    }
+
+    // Yield initial data
+    yield await getCurrentData();
+
+    // Listen for changes and re-emit
+    await for (final _ in DbSignal.instance.eventsStream) {
+      yield await getCurrentData();
+    }
+  }
+
+  /// Get display event by ID (handles both master and instance IDs)
+  Future<EventDisplay?> getDisplayEventById(String id) async {
+    // First try as master ID
+    final master = await dao.getById(id);
+    if (master != null) {
+      return EventDisplay.fromMaster(master);
+    }
+
+    // Try as instance ID (format: "instance_{dbId}")
+    if (id.startsWith('instance_')) {
+      final instanceDbId = int.tryParse(id.substring(9));
+      if (instanceDbId != null) {
+        final db = await AppDatabase.instance.database;
+        final instanceRows = await db.query(
+          'event_instances',
+          where: 'id = ?',
+          whereArgs: [instanceDbId],
+          limit: 1,
+        );
+
+        if (instanceRows.isNotEmpty) {
+          final instanceData = instanceRows.first;
+          final masterId = instanceData['master_event_id'] as String;
+          final master = await dao.getById(masterId);
+
+          if (master != null) {
+            return EventDisplay(
+              id: id,
+              parentId: masterId,
+              title: master.title,
+              description: master.description,
+              startDt: instanceData['start_utc'] as String,
+              endDt: instanceData['end_utc'] as String,
+              allDay: master.allDay,
+              location: master.location,
+              sourcePlatform: master.sourcePlatform,
+              platformColor: master.platformColor,
+              durationMin: master.durationMin,
+              isInstance: true,
+              isDetached: (instanceData['is_detached'] as int) == 1,
+              updatedAt: instanceData['updated_at'] as String,
+            );
+          }
+        }
+      }
+    }
+
+    return null;
   }
 }

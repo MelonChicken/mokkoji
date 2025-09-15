@@ -28,6 +28,9 @@ class EventEntity {
   final double? geoLat; // GEO lat
   final double? geoLng; // GEO lng
 
+  // Duration in minutes (v1: single value for all instances)
+  final int durationMin;
+
   final String? recurrenceRule; // (기존 필드 유지 시 사용 안함) → rrule로 대체 가이드
   final String? status;
   final List<Map<String, dynamic>>? attendees;
@@ -57,6 +60,7 @@ class EventEntity {
     this.organizerEmail,
     this.geoLat,
     this.geoLng,
+    this.durationMin = 60, // Default 1 hour
     this.recurrenceRule, // deprecated 대체경로 유지
     this.status,
     this.attendees,
@@ -89,6 +93,7 @@ class EventEntity {
         'geo_lat': geoLat,
         'geo_lng': geoLng,
 
+        'duration_min': durationMin,
         'recurrence_rule': recurrenceRule,
         'status': status,
         'attendees_json': attendees == null ? null : jsonEncode(attendees),
@@ -121,6 +126,7 @@ class EventEntity {
         geoLat: m['geo_lat'] as double?,
         geoLng: m['geo_lng'] as double?,
 
+        durationMin: (m['duration_min'] as int?) ?? 60,
         recurrenceRule: m['recurrence_rule'] as String?,
         status: m['status'] as String?,
         attendees: (m['attendees_json'] as String?) == null
@@ -154,6 +160,7 @@ class EventEntity {
     String? organizerEmail,
     double? geoLat,
     double? geoLng,
+    int? durationMin,
     String? recurrenceRule,
     String? status,
     List<Map<String, dynamic>>? attendees,
@@ -183,6 +190,7 @@ class EventEntity {
         organizerEmail: organizerEmail ?? this.organizerEmail,
         geoLat: geoLat ?? this.geoLat,
         geoLng: geoLng ?? this.geoLng,
+        durationMin: durationMin ?? this.durationMin,
         recurrenceRule: recurrenceRule ?? this.recurrenceRule,
         status: status ?? this.status,
         attendees: attendees ?? this.attendees,

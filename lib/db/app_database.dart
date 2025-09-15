@@ -2,12 +2,15 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../data/migrations/002_iso_to_utc_migration.dart';
+import '../data/migrations/003_add_duration_field.dart';
+import '../data/migrations/004_add_event_instances.dart';
 
 class AppDatabase {
   AppDatabase._();
   static final AppDatabase instance = AppDatabase._();
   static const _dbName = 'mokkoji.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 5;
   Database? _db;
 
   Future<Database> get database async {
@@ -49,7 +52,8 @@ CREATE TABLE IF NOT EXISTS events (
   categories_json TEXT,
   organizer_email TEXT,
   geo_lat REAL,
-  geo_lng REAL
+  geo_lng REAL,
+  duration_min INTEGER NOT NULL DEFAULT 60
 );
 ''');
         await db.execute('CREATE INDEX IF NOT EXISTS idx_events_date ON events(start_dt)');
@@ -116,6 +120,21 @@ CREATE TABLE IF NOT EXISTS event_overrides (
 ''');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_overrides_parent ON event_overrides(ical_uid)');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_overrides_recurid ON event_overrides(recurrence_id)');
+        }
+        
+        if (oldV < 3) {
+          // ISO timestamp migration - fix legacy non-UTC timestamps
+          await IsoToUtcMigration.run(db);
+        }
+
+        if (oldV < 4) {
+          // Add duration field and recurrence enhancements
+          await AddDurationFieldMigration.run(db);
+        }
+
+        if (oldV < 5) {
+          // Add event_instances table for repeat materialization
+          await AddEventInstancesMigration.run(db);
         }
       },
     );

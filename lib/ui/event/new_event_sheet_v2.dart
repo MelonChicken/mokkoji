@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/time/kst.dart';
 import 'package:timezone/timezone.dart' as tz;
 import '../../core/time/app_time.dart';
 import '../../data/services/event_write_service.dart';
@@ -87,9 +86,14 @@ class NewEventFormNotifier extends Notifier<NewEventFormState> {
     state = state.copyWith(location: location);
   }
 
+  /// Normalize text by trimming and basic cleanup
+  String _normalizeText(String text) {
+    return text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
   /// Save the event using the EventWriteService
   Future<void> save(WidgetRef ref, BuildContext context) async {
-    if (!state.isValid) return;
+    if (!state.isValid || state.isSaving) return;
 
     state = state.copyWith(isSaving: true, error: null);
 
@@ -106,37 +110,46 @@ class NewEventFormNotifier extends Notifier<NewEventFormState> {
         time.minute,
       );
 
-      // 2. Convert to UTC for storage
+      // 2. Convert to UTC for storage (ENFORCED UTC CONTRACT)
       final startUtc = AppTime.fromKstToUtc(startKst);
-      final endUtc = startUtc.add(Duration(minutes: state.durationMinutes));
 
-      // 3. Create event draft
+      // 3. Assert UTC contract in debug mode
+      assert(startUtc.isUtc, 'startUtc must be UTC: $startUtc');
+
+      // 4. Normalize text fields only at save time (preserves IME composition during editing)
+      final normalizedTitle = _normalizeText(state.title);
+      final normalizedLocation = state.location.trim();
+
+      // 5. Create event draft with guaranteed UTC times and normalized text
       final draft = EventDraft(
-        title: state.title.trim(),
-        startTime: startUtc,  // UTC for storage
-        endTime: endUtc,      // UTC for storage
-        location: state.location.trim().isEmpty ? null : state.location.trim(),
+        title: normalizedTitle,
+        startTime: startUtc,    // Guaranteed UTC for storage
+        durationMin: state.durationMinutes, // Duration in minutes
+        location: normalizedLocation.isEmpty ? null : normalizedLocation,
         sourcePlatform: 'internal', // Internal events only
       );
 
-      // 4. Save through EventWriteService
+      // 6. Save through EventWriteService
       await ref.read(eventWriteServiceProvider).addEvent(draft);
 
-      // 5. Success - close sheet
+      // 7. Success - close sheet immediately
       if (context.mounted) {
         Navigator.of(context).pop();
       }
     } catch (e) {
-      // 6. Handle error
-      state = state.copyWith(isSaving: false, error: e.toString());
+      // 8. Handle error - show snackbar but keep form open
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('저장 실패: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
+    } finally {
+      // 9. ALWAYS restore button state (prevent stuck "저장 중..." state)
+      state = state.copyWith(isSaving: false);
     }
   }
 }
@@ -167,7 +180,7 @@ class NewEventSheetV2 extends ConsumerWidget {
             
             // Title field (required)
             _TitleField(
-              value: state.title,
+              initialValue: state.title,
               onChanged: notifier.setTitle,
             ),
             const SizedBox(height: 12),
@@ -190,7 +203,7 @@ class NewEventSheetV2 extends ConsumerWidget {
             
             // Location field (optional)
             _LocationField(
-              value: state.location,
+              initialValue: state.location,
               onChanged: notifier.setLocation,
             ),
             const SizedBox(height: 20),
@@ -251,31 +264,62 @@ class _HeaderBar extends StatelessWidget {
   }
 }
 
-/// Title input field
-class _TitleField extends StatelessWidget {
-  final String value;
+/// Title input field with Korean IME composition support
+class _TitleField extends StatefulWidget {
+  final String initialValue;
   final ValueChanged<String> onChanged;
 
   const _TitleField({
-    required this.value,
+    required this.initialValue,
     required this.onChanged,
   });
 
   @override
+  State<_TitleField> createState() => _TitleFieldState();
+}
+
+class _TitleFieldState extends State<_TitleField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.addListener(() {
+      // READ ONLY: No re-setting or processing during input
+      widget.onChanged(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return FieldCard(
       label: '제목 *',
       child: TextField(
+        controller: _controller,
         decoration: InputDecoration(
           hintText: '일정 제목을 입력하세요',
           prefixIcon: Icon(Icons.title, color: colorScheme.onSurface.withOpacity(0.7)),
           border: InputBorder.none,
           filled: false,
         ),
-        onChanged: onChanged,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          letterSpacing: 0, // Prevent Korean character separation
+        ),
         textInputAction: TextInputAction.next,
+        textCapitalization: TextCapitalization.none,
+        enableSuggestions: true,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(200), // Length limit only
+        ],
       ),
     );
   }
@@ -539,31 +583,62 @@ class _DurationRow extends StatelessWidget {
   }
 }
 
-/// Location input field
-class _LocationField extends StatelessWidget {
-  final String value;
+/// Location input field with Korean IME composition support
+class _LocationField extends StatefulWidget {
+  final String initialValue;
   final ValueChanged<String> onChanged;
 
   const _LocationField({
-    required this.value,
+    required this.initialValue,
     required this.onChanged,
   });
 
   @override
+  State<_LocationField> createState() => _LocationFieldState();
+}
+
+class _LocationFieldState extends State<_LocationField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.addListener(() {
+      // READ ONLY: No re-setting or processing during input
+      widget.onChanged(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
+
     return FieldCard(
       label: '장소',
       child: TextField(
+        controller: _controller,
         decoration: InputDecoration(
           hintText: '장소를 입력하세요 (선택)',
           prefixIcon: Icon(Icons.place_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
           border: InputBorder.none,
           filled: false,
         ),
-        onChanged: onChanged,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          letterSpacing: 0, // Prevent Korean character separation
+        ),
         textInputAction: TextInputAction.done,
+        textCapitalization: TextCapitalization.none,
+        enableSuggestions: true,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(500), // Length limit only
+        ],
       ),
     );
   }

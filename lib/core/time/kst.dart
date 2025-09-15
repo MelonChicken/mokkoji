@@ -5,6 +5,7 @@
 /// - 앱 초기화 시 KST.init() 호출 필수
 /// - 모든 시간 표시는 KST.* 헬퍼 함수 사용
 /// - UTC milliseconds를 KST 포맷으로 변환
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -12,6 +13,9 @@ import 'package:timezone/timezone.dart' as tz;
 class KST {
   static bool _inited = false;
   static late tz.Location _seoul;
+  
+  // Regex to detect timezone offset in ISO strings
+  static final _offsetRegex = RegExp(r'(Z|[+-]\d{2}:?\d{2})$');
 
   /// KST 초기화 - 앱 시작 시 반드시 호출
   /// tzdata를 로드하고 Asia/Seoul 타임존을 설정합니다.
@@ -167,34 +171,179 @@ class KST {
   /// 디버그용: 현재 KST 타임존 정보
   static String get timezoneInfo => _inited ? _seoul.name : 'Not initialized';
 
-  /// ISO8601 UTC 문자열을 KST 날짜 포맷으로 변환 (기존 시스템 호환용)
-  /// @param isoString UTC ISO8601 문자열 (예: "2025-09-10T02:00:00.000Z")
+  /// Lenient UTC parser: 모든 ISO 형태를 UTC DateTime으로 보정
+  /// 
+  /// 다양한 ISO 형태를 처리:
+  /// - "2025-09-10T02:00:00.000Z" (UTC) → 그대로 반환
+  /// - "2025-09-10T11:00:00.000+09:00" (오프셋) → UTC로 변환
+  /// - "2025-09-10T02:00:00.000" (naive) → KST로 해석 후 UTC 변환
+  /// 
+  /// @param iso ISO8601 문자열 (모든 형태 허용)
+  /// @return UTC DateTime (항상 isUtc: true)
+  static DateTime parseUtcIsoLenient(String iso) {
+    final dt = DateTime.parse(iso);
+    
+    // 이미 UTC인 경우 그대로 반환
+    if (dt.isUtc) return dt;
+    
+    // 오프셋이 명시된 경우: toUtc()로 정확한 UTC 변환
+    if (_offsetRegex.hasMatch(iso)) {
+      return dt.toUtc();
+    }
+    
+    // 오프셋이 없는 'naive' ISO는 과거 데이터로 간주
+    // KST로 해석한 후 UTC로 변환 (기존 데이터 호환성)
+    if (kDebugMode) {
+      debugPrint('[time] coerced non-utc iso: $iso');
+    }
+    
+    assert(_inited, 'KST.init()을 먼저 호출해야 합니다.');
+    final kdt = tz.TZDateTime(_seoul, dt.year, dt.month, dt.day, 
+                              dt.hour, dt.minute, dt.second, 
+                              dt.millisecond, dt.microsecond);
+    return kdt.toUtc();
+  }
+
+  /// ISO8601 문자열을 KST 날짜 포맷으로 변환 (관용 파서 사용)
+  /// @param isoString ISO8601 문자열 (모든 형태 허용)
   /// @return "yyyy년 MM월 dd일" 형태의 한국어 날짜
   static String dayFromIso(String isoString) {
-    final utcDateTime = DateTime.parse(isoString);
-    assert(utcDateTime.isUtc, 'ISO 문자열은 UTC 시간이어야 합니다');
+    final utcDateTime = parseUtcIsoLenient(isoString);
     final ms = utcDateTime.millisecondsSinceEpoch;
     return day(ms);
   }
 
-  /// ISO8601 UTC 문자열을 KST 시간 포맷으로 변환 (기존 시스템 호환용)
-  /// @param isoString UTC ISO8601 문자열
+  /// ISO8601 문자열을 KST 시간 포맷으로 변환 (관용 파서 사용)
+  /// @param isoString ISO8601 문자열 (모든 형태 허용)
   /// @return "HH:mm" 형태의 24시간 시간
   static String hmFromIso(String isoString) {
-    final utcDateTime = DateTime.parse(isoString);
-    assert(utcDateTime.isUtc, 'ISO 문자열은 UTC 시간이어야 합니다');
+    final utcDateTime = parseUtcIsoLenient(isoString);
     final ms = utcDateTime.millisecondsSinceEpoch;
     return hm(ms);
   }
 
-  /// ISO8601 UTC 문자열들로 시간 범위를 포맷팅 (기존 시스템 호환용)
-  /// @param startIso 시작 시간 UTC ISO8601 문자열
-  /// @param endIso 종료 시간 UTC ISO8601 문자열 (null이면 시작 시간만)
+  /// ISO8601 문자열들로 시간 범위를 포맷팅 (관용 파서 사용)
+  /// @param startIso 시작 시간 ISO8601 문자열 (모든 형태 허용)
+  /// @param endIso 종료 시간 ISO8601 문자열 (null이면 시작 시간만)
   /// @return "HH:mm" 또는 "HH:mm - HH:mm" 형태
   static String rangeFromIso(String startIso, String? endIso) {
     if (endIso == null) {
       return hmFromIso(startIso);
     }
     return '${hmFromIso(startIso)} - ${hmFromIso(endIso)}';
+  }
+
+  // ===== New methods for repeat engine =====
+
+  /// Convert UTC ISO string to KST DateTime
+  /// @param isoString UTC ISO8601 string (e.g., "2025-09-14T02:00:00.000Z")
+  /// @return KST DateTime (not timezone-aware, just adjusted for display)
+  static DateTime fromUtcIso(String isoString) {
+    final utc = parseUtcIsoLenient(isoString);
+    final kstTz = fromUtcMs(utc.millisecondsSinceEpoch);
+    // Convert to regular DateTime for easier arithmetic
+    return DateTime(kstTz.year, kstTz.month, kstTz.day,
+                   kstTz.hour, kstTz.minute, kstTz.second,
+                   kstTz.millisecond, kstTz.microsecond);
+  }
+
+  /// Convert KST DateTime to UTC ISO string
+  /// @param kstDateTime KST DateTime (will be treated as KST)
+  /// @return UTC ISO8601 string with Z suffix
+  static String toUtcIso(DateTime kstDateTime) {
+    assert(_inited, 'KST.init()을 먼저 호출해야 합니다.');
+
+    // Treat input as KST and convert to UTC
+    final kstTz = tz.TZDateTime(_seoul,
+      kstDateTime.year, kstDateTime.month, kstDateTime.day,
+      kstDateTime.hour, kstDateTime.minute, kstDateTime.second,
+      kstDateTime.millisecond, kstDateTime.microsecond
+    );
+
+    return kstTz.toUtc().toIso8601String();
+  }
+
+  /// Get start of day for KST DateTime
+  /// @param kstDateTime KST DateTime
+  /// @return KST DateTime at 00:00:00
+  static DateTime atStartOfDay(DateTime kstDateTime) {
+    return DateTime(kstDateTime.year, kstDateTime.month, kstDateTime.day);
+  }
+
+  /// Get end of day for KST DateTime
+  /// @param kstDateTime KST DateTime
+  /// @return KST DateTime at 23:59:59.999
+  static DateTime atEndOfDay(DateTime kstDateTime) {
+    return DateTime(kstDateTime.year, kstDateTime.month, kstDateTime.day, 23, 59, 59, 999);
+  }
+
+  /// Round down to start of minute (for comparing recurrence exceptions)
+  /// @param kstDateTime KST DateTime
+  /// @return KST DateTime with seconds/milliseconds zeroed
+  static DateTime atStartOfMinute(DateTime kstDateTime) {
+    return DateTime(kstDateTime.year, kstDateTime.month, kstDateTime.day,
+                   kstDateTime.hour, kstDateTime.minute);
+  }
+
+  /// Convert KST DateTime to day key string
+  /// @param kstDateTime KST DateTime
+  /// @return 'YYYY-MM-DD' day key string
+  static String dayKey(DateTime kstDateTime) {
+    return '${kstDateTime.year.toString().padLeft(4, '0')}-'
+           '${kstDateTime.month.toString().padLeft(2, '0')}-'
+           '${kstDateTime.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Get current KST as regular DateTime (for calculations)
+  /// @return Current KST as DateTime
+  static DateTime nowAsDateTime() {
+    final kstTz = now();
+    return DateTime(kstTz.year, kstTz.month, kstTz.day,
+                   kstTz.hour, kstTz.minute, kstTz.second,
+                   kstTz.millisecond, kstTz.microsecond);
+  }
+
+  // ===== Enhanced methods for repeat materialization =====
+
+  /// Create KST TZDateTime from UTC DateTime for recurrence expansion
+  /// @param utc UTC DateTime to convert
+  /// @return TZDateTime anchored in Asia/Seoul
+  static tz.TZDateTime kstAnchorFromUtc(DateTime utc) {
+    assert(_inited, 'KST.init()을 먼저 호출해야 합니다.');
+    return tz.TZDateTime.from(utc.isUtc ? utc : utc.toUtc(), _seoul);
+  }
+
+  /// Convert KST TZDateTime to UTC DateTime for storage
+  /// @param kstDt KST TZDateTime
+  /// @return UTC DateTime ready for storage
+  static DateTime utcFromKst(tz.TZDateTime kstDt) {
+    return kstDt.toUtc();
+  }
+
+  /// Get date key from TZDateTime for provider invalidation
+  /// @param tzDateTime TZDateTime (should be KST)
+  /// @return 'YYYY-MM-DD' date key
+  static String dateKeyFromTz(tz.TZDateTime tzDateTime) {
+    return '${tzDateTime.year.toString().padLeft(4, '0')}-'
+           '${tzDateTime.month.toString().padLeft(2, '0')}-'
+           '${tzDateTime.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Get all affected date keys for cross-day events
+  /// @param startKst Start time in KST
+  /// @param endKst End time in KST
+  /// @return Set of date keys that this event touches
+  static Set<String> getAffectedDateKeys(tz.TZDateTime startKst, tz.TZDateTime endKst) {
+    final keys = <String>{};
+
+    // Always include start date
+    keys.add(dateKeyFromTz(startKst));
+
+    // If event crosses midnight, include end date too
+    if (startKst.day != endKst.day || startKst.month != endKst.month || startKst.year != endKst.year) {
+      keys.add(dateKeyFromTz(endKst));
+    }
+
+    return keys;
   }
 }

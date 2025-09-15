@@ -7,6 +7,7 @@ import '../../widgets/field_card.dart';
 import '../widgets/source_chip.dart';
 import '../widgets/time_block.dart';
 import '../edit/edit_event_sheet.dart';
+import '../../../features/events/providers/events_providers.dart';
 import 'detail_event_viewmodel.dart';
 
 /// Event detail sheet with KST-formatted display and edit capability
@@ -34,7 +35,7 @@ class DetailEventSheet extends ConsumerWidget {
             _HeaderBar(
               state: stateAsync.valueOrNull,
               onClose: () => Navigator.of(context).pop(),
-              onEdit: () => _showEditSheet(context, eventId),
+              onEdit: () => _showEditSheet(context, ref, eventId),
               onMenuAction: (action) => _handleMenuAction(context, ref, action, eventId),
             ),
 
@@ -55,8 +56,38 @@ class DetailEventSheet extends ConsumerWidget {
     );
   }
 
-  void _showEditSheet(BuildContext context, String eventId) {
-    showEditEventSheet(context, eventId);
+  Future<void> _showEditSheet(BuildContext context, WidgetRef ref, String eventId) async {
+    // If this is an instance, find the master event ID
+    String editEventId = eventId;
+
+    if (eventId.startsWith('instance_')) {
+      // This is an instance - need to get the master ID
+      try {
+        final repository = ref.read(eventsRepositoryProvider);
+        final displayEvent = await repository.getDisplayEventById(eventId);
+        if (displayEvent?.parentId != null) {
+          editEventId = displayEvent!.parentId!;
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('반복 일정의 마스터 이벤트를 편집합니다'),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[DetailEventSheet] Failed to get master ID for instance $eventId: $e');
+        }
+        // Fallback to original eventId if we can't get the master
+      }
+    }
+
+    if (context.mounted) {
+      showEditEventSheet(context, editEventId);
+    }
   }
 
   void _handleMenuAction(BuildContext context, WidgetRef ref, String action, String eventId) async {
@@ -124,7 +155,7 @@ class DetailEventSheet extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('일정 삭제'),
-        content: const Text('이 일정을 삭제하시겠습니까?\n삭제된 일정은 복구할 수 없습니다.'),
+        content: const Text('이 일정을 삭제하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -136,12 +167,43 @@ class DetailEventSheet extends ConsumerWidget {
               Navigator.of(context).pop(); // Close detail sheet
 
               try {
-                await ref.read(detailEventVmProvider(eventId).notifier).deleteEvent();
-                if (context.mounted) {
+                // Delete and get the deleted event for undo
+                final deletedEvent = await ref.read(detailEventVmProvider(eventId).notifier).deleteEvent();
+
+                if (context.mounted && deletedEvent != null) {
+                  // Show undo snackbar
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('일정이 삭제되었습니다'),
+                    SnackBar(
+                      content: Text('${deletedEvent.title} 삭제됨'),
                       behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 5),
+                      action: SnackBarAction(
+                        label: '되돌리기',
+                        onPressed: () async {
+                          try {
+                            await ref.read(detailEventVmProvider(eventId).notifier).restoreEvent();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('${deletedEvent.title} 복구됨'),
+                                  behavior: SnackBarBehavior.floating,
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('복구 실패: $e'),
+                                  backgroundColor: Theme.of(context).colorScheme.error,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
                     ),
                   );
                 }

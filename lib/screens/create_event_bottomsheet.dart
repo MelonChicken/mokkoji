@@ -321,31 +321,30 @@ class _EventCreateSheetState extends ConsumerState<EventCreateSheet> {
                           
                           // Convert to UTC for storage
                           final utcStartTime = AppTime.fromKstToUtc(kstDateTime);
-                          final utcEndTime = utcStartTime.add(const Duration(hours: 1));
-                          
+
                           // Selected platform for integration
                           String selectedPlatform = 'internal';
                           if (_selectedSources.isNotEmpty) {
                             selectedPlatform = _selectedSources.first;
                           }
-                          
+
                           if (kDebugMode) {
                             print('🎯 KST input: ${kstDateTime.toIso8601String()}');
                             print('🎯 UTC storage: ${utcStartTime.toIso8601String()}');
                             print('🎯 Platform: $selectedPlatform');
                           }
-                          
+
                           // Create event using unified write service
                           final writeService = ref.read(eventWriteServiceProvider);
                           final draft = EventDraft(
                             title: _titleController.text.trim(),
-                            description: _placeController.text.trim().isNotEmpty 
-                                ? _placeController.text.trim() 
+                            description: _placeController.text.trim().isNotEmpty
+                                ? _placeController.text.trim()
                                 : null,
                             startTime: utcStartTime, // UTC for storage
-                            endTime: utcEndTime,     // UTC for storage
-                            location: _placeController.text.trim().isNotEmpty 
-                                ? _placeController.text.trim() 
+                            durationMin: 60,         // Default 1 hour duration
+                            location: _placeController.text.trim().isNotEmpty
+                                ? _placeController.text.trim()
                                 : null,
                             sourcePlatform: selectedPlatform,
                           );

@@ -4,7 +4,7 @@ import '../screens/home_screen.dart';
 import '../screens/agenda_screen.dart';
 import '../screens/group_screen.dart';
 import '../screens/settings_screen.dart';
-import '../screens/detail_screen.dart';
+import '../screens/enhanced_detail_screen.dart';
 import '../widgets/navigation_shell.dart';
 import '../features/onboarding/onboarding_gate.dart';
 import '../features/onboarding/onboarding_screen.dart';
@@ -62,7 +62,7 @@ class AppRouter {
       ),
       GoRoute(
         path: '/detail/:eventId',
-        builder: (context, state) => DetailScreen(
+        builder: (context, state) => EnhancedDetailScreen(
           eventId: state.pathParameters['eventId']!,
         ),
       ),

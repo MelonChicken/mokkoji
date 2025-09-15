@@ -165,6 +165,11 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
     state = state.copyWith(description: description, hasChanges: true);
   }
 
+  /// Normalize text by trimming and basic cleanup
+  String _normalizeText(String text) {
+    return text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
   Future<void> save(BuildContext context) async {
     if (!state.isValid || state.isSaving || _originalEvent == null) return;
 
@@ -185,16 +190,20 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
 
       // Convert to UTC for storage
       final startUtc = AppTime.fromKstToUtc(startKst);
-      final endUtc = startUtc.add(Duration(minutes: state.durationMinutes));
 
-      // Create patch
+      // Normalize text fields only at save time (preserves IME composition during editing)
+      final normalizedTitle = _normalizeText(state.title);
+      final normalizedDescription = state.description.trim();
+      final normalizedLocation = state.location.trim();
+
+      // Create patch with normalized text and duration
       final patch = EventPatch(
         id: _originalEvent!.id,
-        title: state.title.trim(),
-        description: state.description.trim().isEmpty ? null : state.description.trim(),
+        title: normalizedTitle,
+        description: normalizedDescription.isEmpty ? null : normalizedDescription,
         startTime: startUtc,
-        endTime: endUtc,
-        location: state.location.trim().isEmpty ? null : state.location.trim(),
+        durationMin: state.durationMinutes,
+        location: normalizedLocation.isEmpty ? null : normalizedLocation,
       );
 
       // Save through service with conflict detection
@@ -270,7 +279,7 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
 
   bool hasUnsavedChanges() => state.hasChanges;
 
-  /// Refresh original event data and clear conflict state
+  /// Refresh original event data and re-seed form to avoid stale state
   void _refreshAndRetry() async {
     if (_originalEvent == null) return;
 
@@ -279,11 +288,17 @@ class EditEventFormNotifier extends FamilyNotifier<EditEventFormState, String> {
       final freshEvent = await ref.read(eventByIdProvider(_originalEvent!.id).future);
       if (freshEvent != null) {
         _originalEvent = freshEvent;
-        // Clear conflict state
-        state = state.copyWith(
+
+        // Re-initialize form with fresh data (prevents stale state)
+        final freshState = _initializeFromEvent(freshEvent);
+
+        // Merge with current loading/error state but use fresh form data
+        state = freshState.copyWith(
           hasConflict: false,
           conflictMessage: null,
           error: null,
+          hasChanges: false, // Reset dirty flag since form is fresh
+          saved: false,
         );
       }
     } catch (e) {
@@ -359,7 +374,7 @@ class EditEventSheet extends ConsumerWidget {
                     children: [
                       // Title field
                       _TitleField(
-                        value: state.title,
+                        initialValue: state.title,
                         onChanged: notifier.setTitle,
                       ),
                       const SizedBox(height: 12),
@@ -383,14 +398,14 @@ class EditEventSheet extends ConsumerWidget {
 
                       // Location field
                       _LocationField(
-                        value: state.location,
+                        initialValue: state.location,
                         onChanged: notifier.setLocation,
                       ),
                       const SizedBox(height: 12),
 
                       // Description field
                       _DescriptionField(
-                        value: state.description,
+                        initialValue: state.description,
                         onChanged: notifier.setDescription,
                       ),
                       const SizedBox(height: 20),
@@ -500,15 +515,38 @@ class _HeaderBar extends StatelessWidget {
   }
 }
 
-/// Title input field
-class _TitleField extends StatelessWidget {
-  final String value;
+/// Title input field with Korean IME composition support
+class _TitleField extends StatefulWidget {
+  final String initialValue;
   final ValueChanged<String> onChanged;
 
   const _TitleField({
-    required this.value,
+    required this.initialValue,
     required this.onChanged,
   });
+
+  @override
+  State<_TitleField> createState() => _TitleFieldState();
+}
+
+class _TitleFieldState extends State<_TitleField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.addListener(() {
+      // READ ONLY: No re-setting or processing during input
+      widget.onChanged(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -517,15 +555,22 @@ class _TitleField extends StatelessWidget {
     return FieldCard(
       label: '제목 *',
       child: TextField(
-        controller: TextEditingController(text: value)..selection = TextSelection.collapsed(offset: value.length),
+        controller: _controller,
         decoration: InputDecoration(
           hintText: '일정 제목을 입력하세요',
           prefixIcon: Icon(Icons.title, color: colorScheme.onSurface.withOpacity(0.7)),
           border: InputBorder.none,
           filled: false,
         ),
-        onChanged: onChanged,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          letterSpacing: 0, // Prevent Korean character separation
+        ),
         textInputAction: TextInputAction.next,
+        textCapitalization: TextCapitalization.none,
+        enableSuggestions: true,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(200), // Length limit only
+        ],
       ),
     );
   }
@@ -760,12 +805,35 @@ class _DurationRow extends StatelessWidget {
   }
 }
 
-/// Location input field
-class _LocationField extends StatelessWidget {
-  final String value;
+/// Location input field with Korean IME composition support
+class _LocationField extends StatefulWidget {
+  final String initialValue;
   final ValueChanged<String> onChanged;
 
-  const _LocationField({required this.value, required this.onChanged});
+  const _LocationField({required this.initialValue, required this.onChanged});
+
+  @override
+  State<_LocationField> createState() => _LocationFieldState();
+}
+
+class _LocationFieldState extends State<_LocationField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.addListener(() {
+      // READ ONLY: No re-setting or processing during input
+      widget.onChanged(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -774,26 +842,56 @@ class _LocationField extends StatelessWidget {
     return FieldCard(
       label: '장소',
       child: TextField(
-        controller: TextEditingController(text: value)..selection = TextSelection.collapsed(offset: value.length),
+        controller: _controller,
         decoration: InputDecoration(
           hintText: '장소를 입력하세요 (선택)',
           prefixIcon: Icon(Icons.place_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
           border: InputBorder.none,
           filled: false,
         ),
-        onChanged: onChanged,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          letterSpacing: 0, // Prevent Korean character separation
+        ),
         textInputAction: TextInputAction.next,
+        textCapitalization: TextCapitalization.none,
+        enableSuggestions: true,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(500), // Length limit only
+        ],
       ),
     );
   }
 }
 
-/// Description input field
-class _DescriptionField extends StatelessWidget {
-  final String value;
+/// Description/memo input field with Korean IME composition support
+class _DescriptionField extends StatefulWidget {
+  final String initialValue;
   final ValueChanged<String> onChanged;
 
-  const _DescriptionField({required this.value, required this.onChanged});
+  const _DescriptionField({required this.initialValue, required this.onChanged});
+
+  @override
+  State<_DescriptionField> createState() => _DescriptionFieldState();
+}
+
+class _DescriptionFieldState extends State<_DescriptionField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _controller.addListener(() {
+      // READ ONLY: No re-setting or processing during input
+      widget.onChanged(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -802,17 +900,24 @@ class _DescriptionField extends StatelessWidget {
     return FieldCard(
       label: '설명',
       child: TextField(
-        controller: TextEditingController(text: value)..selection = TextSelection.collapsed(offset: value.length),
+        controller: _controller,
         decoration: InputDecoration(
           hintText: '추가 설명을 입력하세요 (선택)',
           prefixIcon: Icon(Icons.description_outlined, color: colorScheme.onSurface.withOpacity(0.7)),
           border: InputBorder.none,
           filled: false,
         ),
-        onChanged: onChanged,
+        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          letterSpacing: 0, // Prevent Korean character separation
+        ),
         textInputAction: TextInputAction.done,
-        maxLines: 3,
-        minLines: 1,
+        maxLines: null, // Allow unlimited lines for memo
+        keyboardType: TextInputType.multiline,
+        textCapitalization: TextCapitalization.none,
+        enableSuggestions: true,
+        inputFormatters: [
+          LengthLimitingTextInputFormatter(10000), // Length limit only
+        ],
       ),
     );
   }
