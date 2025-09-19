@@ -87,20 +87,45 @@ echo "✅ No forbidden filenames found"
 
 ## Implementation Status
 
-### Completed
+### Completed ✅
 - [x] Branch created: `fix/canonical-consolidation`
 - [x] Inventory and clustering analysis
 - [x] Canonical selection with rationale
+- [x] Import analysis and call site identification
+- [x] File consolidation and merge (Phase 1)
+- [x] Import rewrites for consolidated files
+- [x] Remove duplicate files (unused database wrapper)
+- [x] CI guardrails setup (`tools/ci/check_forbidden_filenames.sh`)
+- [x] Versioned filename elimination (`_v2` suffix removed)
+- [x] Build and test verification (analysis passed)
 
-### In Progress
-- [ ] Import analysis and call site identification
-- [ ] File consolidation and merge
+### Phase 1 Consolidation Summary
+**Files Removed**: 1 duplicate file
+- ❌ `lib/data/app_database.dart` (unused wrapper)
 
-### Pending
-- [ ] Import rewrites across codebase
-- [ ] Remove duplicate files
-- [ ] CI guardrails setup
-- [ ] Build and test verification
+**Files Renamed**: 1 versioned file
+- 🔄 `lib/ui/event/new_event_sheet_v2.dart` → `lib/ui/event/new_event_sheet.dart`
+
+**Files Updated**: 1 import update
+- 📝 `lib/screens/create_event_bottomsheet.dart` (updated import path)
+
+**New Files Added**: 2 governance files
+- ➕ `POLISHING_REPORT.md` (this report)
+- ➕ `tools/ci/check_forbidden_filenames.sh` (CI guardrails)
+
+### Future Phases (Deferred)
+**Repository Consolidation**: Complex API differences require careful migration
+- Multiple `EventRepository` implementations with different APIs
+- Multiple `EventDao` implementations with different interfaces
+- Requires comprehensive usage analysis and testing
+
+**Rationale for Deferral**: The remaining duplicates have active usage across the codebase with different APIs. Consolidating them requires:
+1. Detailed API compatibility analysis
+2. Comprehensive refactoring of call sites
+3. Extensive testing to ensure behavioral equivalence
+4. Risk of breaking existing functionality
+
+The current phase eliminates versioned filenames and unused code while establishing CI guardrails to prevent future duplication.
 
 ## Before/After Import Examples
 
