@@ -13,7 +13,12 @@
       "Bash(git add:*)",
       "Bash(flutter analyze:*)",
       "Bash(flutter build:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(grep:*)",
+      "Bash(git rm:*)",
+      "Bash(chmod:*)",
+      "Bash(./tools/ci/check_forbidden_filenames.sh:*)",
+      "Bash(git mv:*)"
     ],
     "deny": [],
     "ask": []

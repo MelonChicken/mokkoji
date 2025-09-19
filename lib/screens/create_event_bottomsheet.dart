@@ -6,7 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../core/time/app_time.dart';
 import '../data/providers/unified_providers.dart';
 import '../data/services/event_write_service.dart';
-import '../ui/event/new_event_sheet_v2.dart';
+import '../ui/event/new_event_sheet.dart';
 
 Future<void> showEventCreateSheet(BuildContext context, {VoidCallback? onEventCreated}) {
   return showNewEventSheetV2(context);
