@@ -1,0 +1,203 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+
+jobs:
+  forbidden-filenames:
+    name: Check Forbidden Filenames
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run forbidden filenames check
+        run: |
+          chmod +x tools/ci/check_forbidden_filenames.sh
+          ./tools/ci/check_forbidden_filenames.sh
+
+  dependencies-audit:
+    name: Audit Dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Check for outdated packages
+        run: |
+          echo "📦 Checking for outdated packages..."
+          flutter pub outdated --mode=null-safety --json > outdated.json || true
+
+          if [ -s outdated.json ]; then
+            echo "⚠️ Outdated packages found - review recommended"
+            flutter pub outdated
+          else
+            echo "✅ All packages are up to date"
+          fi
+
+      - name: Analyze dependency tree
+        run: |
+          echo "🔍 Analyzing dependency tree..."
+          flutter pub deps --style=compact > deps.txt
+
+          # Check for duplicate dependencies
+          DUPLICATES=$(grep -E '^\s+.+\s+[0-9]' deps.txt | sort | uniq -d || true)
+
+          if [ -n "$DUPLICATES" ]; then
+            echo "⚠️ Potential duplicate dependencies detected:"
+            echo "$DUPLICATES"
+          else
+            echo "✅ No duplicate dependencies found"
+          fi
+
+  code-metrics:
+    name: Code Metrics & Complexity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Count lines of code
+        run: |
+          echo "📊 Counting lines of code..."
+          echo "## Code Statistics" > metrics.md
+          echo "" >> metrics.md
+
+          DART_FILES=$(find lib -name "*.dart" | wc -l)
+          DART_LINES=$(find lib -name "*.dart" -exec cat {} \; | wc -l)
+          TEST_FILES=$(find test -name "*.dart" 2>/dev/null | wc -l || echo 0)
+          TEST_LINES=$(find test -name "*.dart" -exec cat {} \; 2>/dev/null | wc -l || echo 0)
+
+          echo "**Dart Files**: $DART_FILES" >> metrics.md
+          echo "**Lines of Code**: $DART_LINES" >> metrics.md
+          echo "**Test Files**: $TEST_FILES" >> metrics.md
+          echo "**Test Lines**: $TEST_LINES" >> metrics.md
+
+          if [ $TEST_LINES -gt 0 ]; then
+            TEST_RATIO=$((DART_LINES * 100 / TEST_LINES))
+            echo "**Code:Test Ratio**: 1:$((TEST_LINES * 100 / DART_LINES))%" >> metrics.md
+          fi
+
+          cat metrics.md
+
+      - name: Check file sizes
+        run: |
+          echo "📏 Checking for large files..."
+          LARGE_DART_FILES=$(find lib -name "*.dart" -size +1000c -exec wc -l {} \; | sort -rn | head -10 || true)
+
+          if [ -n "$LARGE_DART_FILES" ]; then
+            echo "⚠️ Large Dart files (top 10):"
+            echo "$LARGE_DART_FILES"
+            echo ""
+            echo "Consider splitting files larger than 500 lines"
+          else
+            echo "✅ No excessively large files found"
+          fi
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: code-metrics
+          path: metrics.md
+          retention-days: 30
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Check for sensitive data
+        run: |
+          echo "🔒 Scanning for sensitive data patterns..."
+
+          # Check for hardcoded secrets
+          SECRETS=$(grep -rn --include="*.dart" -E '(api_key|apiKey|password|secret|token|API_KEY|OPENAI_API_KEY).*=.*["\047][a-zA-Z0-9]{20,}["\047]' lib/ || true)
+
+          if [ -n "$SECRETS" ]; then
+            echo "❌ Potential hardcoded secrets detected:"
+            echo "$SECRETS"
+            echo ""
+            echo "Please use environment variables or secure storage instead"
+            exit 1
+          else
+            echo "✅ No obvious hardcoded secrets found"
+          fi
+
+      - name: Check for debug statements
+        run: |
+          echo "🐛 Checking for leftover debug statements..."
+
+          DEBUG_STATEMENTS=$(grep -rn --include="*.dart" -E '(print\(|debugPrint\(|console\.log)' lib/ || true)
+
+          if [ -n "$DEBUG_STATEMENTS" ]; then
+            echo "⚠️ Debug statements found in production code:"
+            echo "$DEBUG_STATEMENTS"
+            echo ""
+            echo "Consider using a logger instead of print statements"
+          else
+            echo "✅ No debug statements found"
+          fi
+
+      - name: Check TODO/FIXME comments
+        run: |
+          echo "📝 Checking for TODO/FIXME comments..."
+
+          TODOS=$(grep -rn --include="*.dart" -E '(TODO|FIXME|HACK|XXX):' lib/ || true)
+
+          if [ -n "$TODOS" ]; then
+            echo "⚠️ TODO/FIXME comments found:"
+            echo "$TODOS" | head -20
+            echo ""
+            if [ $(echo "$TODOS" | wc -l) -gt 20 ]; then
+              echo "... and $(echo "$TODOS" | wc -l) more"
+            fi
+          else
+            echo "✅ No TODO/FIXME comments found"
+          fi

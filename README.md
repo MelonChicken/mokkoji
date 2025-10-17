@@ -1,5 +1,9 @@
 # Mokkoji MVP - 일정/모임 통합 브리핑 앱
 
+[![Flutter CI](https://github.com/MelonChicken/mokkoji/workflows/Flutter%20CI/badge.svg)](https://github.com/MelonChicken/mokkoji/actions?query=workflow%3A%22Flutter+CI%22)
+[![PR Validation](https://github.com/MelonChicken/mokkoji/workflows/PR%20Validation/badge.svg)](https://github.com/MelonChicken/mokkoji/actions?query=workflow%3A%22PR+Validation%22)
+[![Code Quality](https://github.com/MelonChicken/mokkoji/workflows/Code%20Quality/badge.svg)](https://github.com/MelonChicken/mokkoji/actions?query=workflow%3A%22Code+Quality%22)
+
 Mokkoji는 다양한 플랫폼(카카오, 네이버, 구글 캘린더)의 일정을 통합하고, 스마트한 브리핑과 모임 관리 기능을 제공하는 Flutter 앱입니다.
 
 ## 🎯 주요 기능
@@ -168,6 +172,29 @@ CREATE TABLE event_overrides (
 1. `app_database.dart`에서 `_dbVersion` 증가
 2. `onUpgrade`에 DDL 스크립트 추가
 3. `onCreate`에도 동일 스키마 반영
+
+### CI/CD
+
+GitHub Actions를 통한 자동화된 CI/CD 파이프라인:
+
+- **Flutter CI**: 빌드, 테스트, 정적 분석
+- **PR Validation**: PR 품질 체크, 번들 사이즈 분석
+- **Code Quality**: 보안 스캔, 의존성 감사, 코드 메트릭스
+
+상세 내용은 [.github/workflows/README.md](.github/workflows/README.md) 참조
+
+### 커밋 메시지 규칙
+
+[Conventional Commits](https://www.conventionalcommits.org/) 형식 준수:
+```
+feat: 새로운 기능 추가
+fix: 버그 수정
+docs: 문서 변경
+style: 코드 포맷팅
+refactor: 리팩토링
+test: 테스트 추가/수정
+chore: 빌드/설정 변경
+```
 
 ## 📄 라이선스
 

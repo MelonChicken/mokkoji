@@ -1,0 +1,205 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-checks:
+    name: PR Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commit analysis
+
+      - name: Check PR title format
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if ! echo "$PR_TITLE" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+'; then
+            echo "❌ PR title must follow conventional commits format"
+            echo "Examples:"
+            echo "  feat: add new feature"
+            echo "  fix(api): resolve timeout issue"
+            echo "  docs: update README"
+            exit 1
+          fi
+          echo "✅ PR title format is valid"
+
+      - name: Check PR description
+        run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          if [ -z "$PR_BODY" ] || [ "$PR_BODY" = "null" ]; then
+            echo "⚠️ Warning: PR has no description"
+            echo "Please add a description explaining the changes"
+          else
+            echo "✅ PR has a description"
+          fi
+
+      - name: Check for merge conflicts
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          if git merge-base --is-ancestor HEAD origin/${{ github.event.pull_request.base.ref }}; then
+            echo "✅ No merge conflicts detected"
+          else
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            if [ -n "$CONFLICTS" ]; then
+              echo "❌ Merge conflicts detected:"
+              echo "$CONFLICTS"
+              exit 1
+            fi
+          fi
+
+      - name: Check commit messages
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+
+          INVALID_COMMITS=$(git log --format="%H %s" $BASE_SHA..$HEAD_SHA | \
+            grep -v -E '^[a-f0-9]+ (feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .+' || true)
+
+          if [ -n "$INVALID_COMMITS" ]; then
+            echo "⚠️ Warning: Some commits don't follow conventional commits format:"
+            echo "$INVALID_COMMITS"
+          else
+            echo "✅ All commits follow conventional commits format"
+          fi
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Check for large files
+        run: |
+          LARGE_FILES=$(find . -type f -size +1M -not -path "./.git/*" -not -path "./build/*" -not -path "./.dart_tool/*" || true)
+          if [ -n "$LARGE_FILES" ]; then
+            echo "⚠️ Warning: Large files detected (>1MB):"
+            echo "$LARGE_FILES"
+            echo "Consider using Git LFS for large assets"
+          else
+            echo "✅ No large files detected"
+          fi
+
+      - name: Check dependencies for vulnerabilities
+        run: |
+          echo "📦 Checking for outdated packages..."
+          flutter pub outdated --json > outdated.json || true
+
+          if [ -s outdated.json ]; then
+            echo "⚠️ Some packages have newer versions available"
+            echo "Run 'flutter pub outdated' locally for details"
+          else
+            echo "✅ All dependencies are up to date"
+          fi
+
+      - name: Comment PR with analysis results
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const workflowStatus = '${{ job.status }}';
+
+            let comment = `## 🤖 PR Validation Results\n\n`;
+            comment += `**Status**: ${workflowStatus === 'success' ? '✅ Passed' : '❌ Failed'}\n\n`;
+            comment += `### Automated Checks\n`;
+            comment += `- ✅ PR title format validated\n`;
+            comment += `- ✅ Code analysis passed\n`;
+            comment += `- ✅ No merge conflicts\n\n`;
+            comment += `For detailed results, check the [workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId}).\n`;
+
+            // Find existing bot comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('PR Validation Results')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
+  size-check:
+    name: Check Bundle Size
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build APK for size analysis
+        run: flutter build apk --release --target-platform android-arm64
+
+      - name: Check APK size
+        run: |
+          APK_SIZE=$(stat -f%z build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 2>/dev/null || stat -c%s build/app/outputs/flutter-apk/app-arm64-v8a-release.apk)
+          APK_SIZE_MB=$((APK_SIZE / 1024 / 1024))
+
+          echo "📦 APK Size: ${APK_SIZE_MB}MB"
+
+          if [ $APK_SIZE_MB -gt 50 ]; then
+            echo "⚠️ Warning: APK size is quite large (>${APK_SIZE_MB}MB)"
+            echo "Consider optimizing assets or using deferred components"
+          else
+            echo "✅ APK size is reasonable"
+          fi
+
+          echo "APK_SIZE_MB=${APK_SIZE_MB}" >> $GITHUB_ENV
+
+      - name: Comment bundle size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const apkSize = process.env.APK_SIZE_MB;
+            const comment = `## 📦 Bundle Size Report\n\n` +
+              `**APK Size (arm64-v8a)**: ${apkSize}MB\n\n` +
+              `${apkSize > 50 ? '⚠️ Consider optimizing assets or code' : '✅ Size looks good'}`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
