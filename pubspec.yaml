@@ -26,6 +26,7 @@ dependencies:
   timezone: ^0.10.1
   uuid: ^4.4.0
   http: ^1.1.0
+  json_annotation: ^4.9.0
 
   # 로컬라이제이션
   flutter_localizations:
@@ -39,6 +40,7 @@ dev_dependencies:
   sqflite_common_ffi: ^2.3.2
   drift_dev: ^2.14.1
   build_runner: ^2.4.7
+  json_serializable: ^6.8.0
 
 flutter:
   uses-material-design: true
